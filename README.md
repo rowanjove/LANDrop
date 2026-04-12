@@ -72,6 +72,10 @@ GitHub Releases 中会提供预编译版本：
 - macOS `amd64` / `arm64`
 - Linux `amd64` / `arm64`
 
+### 许可证
+
+本项目基于 `MIT License` 开源，详见 [LICENSE](./LICENSE)。
+
 ## English
 
 ### Overview
@@ -141,3 +145,7 @@ GitHub Releases will include prebuilt binaries for:
 - Windows `amd64`
 - macOS `amd64` / `arm64`
 - Linux `amd64` / `arm64`
+
+### License
+
+This project is released under the `MIT License`. See [LICENSE](./LICENSE).
