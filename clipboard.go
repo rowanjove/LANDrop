@@ -14,6 +14,7 @@ func NewClipboardManager(broker *SSEBroker) *ClipboardManager {
 }
 
 func (c *ClipboardManager) HandlePush(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10MB max
 	var req struct {
 		Content string `json:"content"`
 	}

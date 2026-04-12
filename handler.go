@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-//go:embed web/index.html
+//go:embed web/*
 var webUI embed.FS
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -36,13 +36,14 @@ func getOS() string {
 }
 
 type App struct {
-	store     *TransferStore
-	broker    *SSEBroker
-	mdns      *MDNSManager
-	pin       *PINManager
-	clipboard *ClipboardManager
-	addr      string
-	hostname  string
+	store      *TransferStore
+	broker     *SSEBroker
+	mdns       *MDNSManager
+	pin        *PINManager
+	clipboard  *ClipboardManager
+	addr       string
+	hostname   string
+	oneTimeUse bool // Token one-time-use mode (SEC-02)
 }
 
 func NewApp(addr string, pin string) *App {
@@ -64,10 +65,22 @@ func (a *App) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /qr", a.handleQR)
 	mux.HandleFunc("POST /send/file", a.handleSendFile)
 	mux.HandleFunc("POST /send/text", a.handleSendText)
+	mux.HandleFunc("GET /preview/{token}", a.handlePreview)
 	mux.HandleFunc("GET /recv/{token}", a.handleRecv)
 	mux.HandleFunc("GET /devices", a.handleDevices)
 	mux.HandleFunc("GET /events", a.handleEvents)
 	mux.HandleFunc("POST /clipboard/push", a.clipboard.HandlePush)
+}
+
+func isMobile(ua string) bool {
+	ua = strings.ToLower(ua)
+	keywords := []string{"iphone", "android", "mobile", "ipad", "ipod", "webos", "opera mini"}
+	for _, kw := range keywords {
+		if strings.Contains(ua, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -75,19 +88,27 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	data, err := webUI.ReadFile("web/index.html")
+	page := "web/desktop.html"
+	if isMobile(r.UserAgent()) {
+		page = "web/mobile.html"
+	}
+	data, err := webUI.ReadFile(page)
 	if err != nil {
 		http.Error(w, "Web UI not found", http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(data)
 }
 
 func (a *App) handleInfo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
 	writeJSON(w, http.StatusOK, map[string]string{
 		"name":    a.hostname,
-		"version": "1.0.0",
+		"version": version,
 		"os":      getOS(),
 		"addr":    a.addr,
 	})
@@ -98,14 +119,16 @@ func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
-	// Parse multipart form, max 500MB
-	if err := r.ParseMultipartForm(maxFileSize); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize+(64<<20))
+	// Parse multipart form, keep ≤32MB in memory, rest goes to temp files
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]interface{}{
-			"error": "文件过大，单次限制 500 MB",
+			"error": "文件过大，单次限制 2 GB",
 			"code":  "FILE_TOO_LARGE",
 		})
 		return
 	}
+	defer r.MultipartForm.RemoveAll()
 
 	// Check for multiple files
 	files := r.MultipartForm.File["file"]
@@ -122,7 +145,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		fh := files[0]
 		if fh.Size > maxFileSize {
 			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]interface{}{
-				"error": "文件过大，单次限制 500 MB",
+				"error": "文件过大，单次限制 2 GB",
 				"code":  "FILE_TOO_LARGE",
 			})
 			return
@@ -137,7 +160,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		}
 		defer f.Close()
 
-		data, err := io.ReadAll(f)
+		item, err := a.store.AddFileFromReader(fh.Filename, f, fh.Size)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 				"error": "保存失败",
@@ -146,15 +169,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		item, err := a.store.AddFile(fh.Filename, data, fh.Size)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-				"error": "保存失败，请检查磁盘空间",
-				"code":  "UPLOAD_FAILED",
-			})
-			return
-		}
-
+		item.OneTimeUse = a.oneTimeUse
 		a.broker.Broadcast("file_ready", map[string]interface{}{
 			"token": item.Token,
 			"name":  item.Name,
@@ -171,15 +186,31 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Multiple files: zip them
-	var buf bytes.Buffer
-	zipWriter := zip.NewWriter(&buf)
+	tmpFile, err := os.CreateTemp(a.store.tempDir, "upload-*.zip")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "upload failed",
+			"code":  "UPLOAD_FAILED",
+		})
+		return
+	}
+	tmpPath := tmpFile.Name()
+	cleanupTemp := true
+	defer func() {
+		_ = tmpFile.Close()
+		if cleanupTemp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	zipWriter := zip.NewWriter(tmpFile)
 	var totalSize int64
 
 	for _, fh := range files {
 		totalSize += fh.Size
 		if totalSize > maxFileSize {
 			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]interface{}{
-				"error": "文件总大小超过 500 MB",
+				"error": "文件总大小超过 2 GB",
 				"code":  "FILE_TOO_LARGE",
 			})
 			return
@@ -187,22 +218,58 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 
 		f, err := fh.Open()
 		if err != nil {
-			continue
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"error": "保存失败",
+				"code":  "UPLOAD_FAILED",
+			})
+			return
 		}
 
-		w, err := zipWriter.Create(fh.Filename)
+		zw, err := zipWriter.Create(sanitizeFilename(fh.Filename))
 		if err != nil {
 			f.Close()
-			continue
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"error": "保存失败",
+				"code":  "UPLOAD_FAILED",
+			})
+			return
 		}
-		io.Copy(w, f)
+		if _, err := io.Copy(zw, f); err != nil {
+			f.Close()
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"error": "保存失败",
+				"code":  "UPLOAD_FAILED",
+			})
+			return
+		}
 		f.Close()
 	}
-	zipWriter.Close()
+	if err := zipWriter.Close(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "保存失败",
+			"code":  "UPLOAD_FAILED",
+		})
+		return
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "upload failed",
+			"code":  "UPLOAD_FAILED",
+		})
+		return
+	}
 
 	zipName := fmt.Sprintf("landrop_%s.zip", time.Now().Format("20060102_150405"))
-	data := buf.Bytes()
-	item, err := a.store.AddFile(zipName, data, int64(len(data)))
+	info, err := os.Stat(tmpPath)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "upload failed",
+			"code":  "UPLOAD_FAILED",
+		})
+		return
+	}
+	item, err := a.store.AddTempFile(zipName, tmpPath, info.Size())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"error": "保存失败",
@@ -210,6 +277,8 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	cleanupTemp = false
+	item.OneTimeUse = a.oneTimeUse
 
 	a.broker.Broadcast("file_ready", map[string]interface{}{
 		"token": item.Token,
@@ -226,6 +295,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleSendText(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxTextSize+1024) // 10MB + overhead
 	var req struct {
 		Content string `json:"content"`
 	}
@@ -253,6 +323,7 @@ func (a *App) handleSendText(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	item.OneTimeUse = a.oneTimeUse
 
 	a.broker.Broadcast("file_ready", map[string]interface{}{
 		"token": item.Token,
@@ -267,6 +338,28 @@ func (a *App) handleSendText(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *App) handlePreview(w http.ResponseWriter, r *http.Request) {
+	token := r.PathValue("token")
+	item, ok := a.store.Get(token)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "not found"})
+		return
+	}
+	if item.Type != "text" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"type": "file", "name": item.Name, "size": item.Size,
+		})
+		return
+	}
+	content := string(item.Content)
+	if len(content) > 500 {
+		content = content[:500]
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"type": "text", "preview": content, "size": item.Size,
+	})
+}
+
 func (a *App) handleRecv(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	if token == "" {
@@ -277,8 +370,8 @@ func (a *App) handleRecv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, ok := a.store.Get(token)
-	if !ok {
+	item, found, unavailable := a.store.BeginDownload(token)
+	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{
 			"error": "token not found",
 			"code":  "TOKEN_NOT_FOUND",
@@ -286,7 +379,7 @@ func (a *App) handleRecv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if item.OneTimeUse && item.Downloaded {
+	if unavailable {
 		writeJSON(w, http.StatusGone, map[string]interface{}{
 			"error": "该内容已被取走",
 			"code":  "TOKEN_USED",
@@ -294,13 +387,22 @@ func (a *App) handleRecv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	success := false
+	defer func() {
+		a.store.FinishDownload(token, success)
+		if success {
+			a.broker.Broadcast("done", map[string]string{"token": token})
+		}
+	}()
+
 	if item.Type == "text" {
-		a.store.MarkDownloaded(token)
-		a.broker.Broadcast("done", map[string]string{"token": token})
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"content": string(item.Content),
 			"type":    "text",
 		})
+		success = err == nil
 		return
 	}
 
@@ -309,29 +411,37 @@ func (a *App) handleRecv(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, item.Name))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", item.Size))
 
+	var writeErr error
 	if item.Content != nil {
-		// Stream from memory with progress reporting
 		reader := bytes.NewReader(item.Content)
 		written := int64(0)
 		buf := make([]byte, 32*1024)
+		startTime := time.Now()
 		lastReport := time.Now()
 
 		for {
-			n, err := reader.Read(buf)
+			n, readErr := reader.Read(buf)
 			if n > 0 {
-				w.Write(buf[:n])
+				if _, writeErr = w.Write(buf[:n]); writeErr != nil {
+					break
+				}
 				written += int64(n)
 				if time.Since(lastReport) > 200*time.Millisecond {
+					elapsed := time.Since(startTime).Seconds()
+					speed := float64(0)
+					if elapsed > 0 {
+						speed = float64(written) / elapsed
+					}
 					a.broker.Broadcast("progress", map[string]interface{}{
 						"token": token,
 						"bytes": written,
 						"total": item.Size,
-						"speed": float64(written) / time.Since(lastReport).Seconds(),
+						"speed": speed,
 					})
 					lastReport = time.Now()
 				}
 			}
-			if err != nil {
+			if readErr != nil {
 				break
 			}
 		}
@@ -344,11 +454,13 @@ func (a *App) handleRecv(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer f.Close()
-		io.Copy(w, f)
+		_, writeErr = io.Copy(w, f)
 	}
 
-	a.store.MarkDownloaded(token)
-	a.broker.Broadcast("done", map[string]string{"token": token})
+	// Only mark downloaded if the transfer completed without write errors
+	if writeErr == nil {
+		success = true
+	}
 }
 
 func (a *App) handleDevices(w http.ResponseWriter, r *http.Request) {
@@ -376,16 +488,28 @@ func (a *App) SendLocalFile(filePath string) (*TransferItem, error) {
 		return a.sendDirectory(absPath, info.Name())
 	}
 	if info.Size() > maxFileSize {
-		return nil, fmt.Errorf("文件过大，单次限制 500 MB")
+		return nil, fmt.Errorf("文件过大，单次限制 2 GB")
 	}
 	return a.store.AddFileFromPath(info.Name(), absPath, info.Size())
 }
 
 func (a *App) sendDirectory(dirPath string, dirName string) (*TransferItem, error) {
-	var buf bytes.Buffer
-	zipWriter := zip.NewWriter(&buf)
+	tmpFile, err := os.CreateTemp(a.store.tempDir, "dir-*.zip")
+	if err != nil {
+		return nil, err
+	}
+	tmpPath := tmpFile.Name()
+	cleanupTemp := true
+	defer func() {
+		_ = tmpFile.Close()
+		if cleanupTemp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
 
-	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+	zipWriter := zip.NewWriter(tmpFile)
+
+	err = filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -410,9 +534,23 @@ func (a *App) sendDirectory(dirPath string, dirName string) (*TransferItem, erro
 	if err != nil {
 		return nil, err
 	}
-	zipWriter.Close()
+	if err := zipWriter.Close(); err != nil {
+		_ = tmpFile.Close()
+		return nil, err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return nil, err
+	}
 
 	zipName := fmt.Sprintf("%s.zip", dirName)
-	data := buf.Bytes()
-	return a.store.AddFile(zipName, data, int64(len(data)))
+	info, err := os.Stat(tmpPath)
+	if err != nil {
+		return nil, err
+	}
+	item, err := a.store.AddTempFile(zipName, tmpPath, info.Size())
+	if err != nil {
+		return nil, err
+	}
+	cleanupTemp = false
+	return item, nil
 }

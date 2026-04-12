@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>LAN Drop</title>
+<style>
+:root {
+  --bg: #f8f9fa; --bg2: #ffffff; --fg: #1a1a2e; --fg2: #555; --border: #ddd;
+  --primary: #4A90D9; --primary-hover: #357ABD; --success: #27ae60; --error: #e74c3c;
+  --shadow: 0 2px 8px rgba(0,0,0,.08); --radius: 12px;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1a1a2e; --bg2:#16213e; --fg:#e8e8e8; --fg2:#aaa; --border:#333;
+  --shadow:0 2px 8px rgba(0,0,0,.3);
+}}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;padding-bottom:80px;-webkit-tap-highlight-color:transparent}
+a{color:var(--primary);text-decoration:none}
+
+/* NAV — compact for mobile */
+nav{position:sticky;top:0;background:var(--bg2);border-bottom:1px solid var(--border);padding:.6rem 1rem;display:flex;align-items:center;gap:.75rem;z-index:100;box-shadow:var(--shadow)}
+nav .logo{font-size:1.2rem;font-weight:700;color:var(--primary)}
+nav .info{font-size:.75rem;color:var(--fg2)}
+nav .spacer{flex:1}
+nav .settings-btn{background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--fg2);padding:4px;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center}
+
+/* LAYOUT — single column */
+.container{max-width:600px;margin:0 auto;padding:.75rem}
+.section{margin-bottom:.75rem}
+
+/* CARD */
+.card{background:var(--bg2);border-radius:var(--radius);padding:1rem;box-shadow:var(--shadow)}
+.card h3{font-size:1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.5rem}
+
+/* TABS for send mode */
+.tab-bar{display:flex;background:var(--bg2);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);margin-bottom:.75rem}
+.tab-bar button{flex:1;padding:.75rem;border:none;background:transparent;color:var(--fg2);font-size:.95rem;font-family:inherit;cursor:pointer;min-height:48px;transition:all .15s}
+.tab-bar button.active{background:var(--primary);color:#fff;font-weight:600}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+/* BIG BUTTONS for file selection */
+.file-actions{display:flex;flex-direction:column;gap:.75rem}
+.big-btn{display:flex;align-items:center;justify-content:center;gap:.75rem;padding:1.25rem;border:2px solid var(--border);border-radius:var(--radius);background:var(--bg2);color:var(--fg);font-size:1rem;font-family:inherit;cursor:pointer;min-height:64px;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.big-btn:active{transform:scale(.98);background:rgba(74,144,217,.05);border-color:var(--primary)}
+.big-btn .icon{font-size:1.5rem}
+.big-btn-primary{border-color:var(--primary);color:var(--primary)}
+input[type="file"]{display:none}
+
+/* PROGRESS */
+.progress-bar{width:100%;height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin-top:.5rem}
+.progress-fill{height:100%;background:var(--primary);transition:width .2s;border-radius:4px}
+.progress-info{font-size:.85rem;color:var(--fg2);margin-top:.25rem;display:flex;justify-content:space-between}
+
+/* SEND RESULT */
+.send-result{margin-top:.75rem;padding:.75rem;background:rgba(39,174,96,.1);border-radius:10px;font-size:.9rem}
+.send-result .url{word-break:break-all;color:var(--primary);font-family:monospace;font-size:.8rem;margin:.5rem 0}
+.send-result .actions{display:flex;gap:.5rem;flex-wrap:wrap}
+
+/* TEXT AREA */
+.text-send textarea{width:100%;min-height:120px;max-height:250px;resize:vertical;border:1px solid var(--border);border-radius:10px;padding:.75rem;font-family:inherit;font-size:1rem;background:var(--bg);color:var(--fg)}
+.text-send textarea:focus{outline:none;border-color:var(--primary)}
+.text-footer{display:flex;justify-content:space-between;align-items:center;margin-top:.5rem}
+.char-count{font-size:.85rem;color:var(--fg2)}
+.char-count.warn{color:var(--error)}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.35rem;padding:.6rem 1.1rem;border:none;border-radius:8px;font-size:.95rem;cursor:pointer;transition:all .15s;font-family:inherit;min-height:44px;min-width:44px}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:active{background:var(--primary-hover)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-sm{padding:.45rem .85rem;font-size:.85rem;min-height:40px}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--fg)}
+.btn-outline:active{border-color:var(--primary);color:var(--primary)}
+.btn-success{background:var(--success);color:#fff}
+.btn-error{background:var(--error);color:#fff}
+.btn-block{width:100%;justify-content:center}
+
+/* DEVICE LIST */
+.device-grid{display:flex;flex-direction:column;gap:.5rem}
+.device-card{display:flex;align-items:center;gap:.75rem;padding:.85rem;border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:all .15s;min-height:56px}
+.device-card:active{border-color:var(--primary);background:rgba(74,144,217,.05)}
+.device-dot{width:10px;height:10px;border-radius:50%;background:var(--success);flex-shrink:0}
+.device-dot.offline{background:#999}
+.device-name{font-weight:500;font-size:.95rem}
+.device-addr{font-size:.8rem;color:var(--fg2);font-family:monospace}
+.device-os{font-size:1.2rem}
+.device-empty{text-align:center;color:var(--fg2);padding:1rem;font-size:.9rem}
+.manual-connect{display:flex;gap:.5rem;margin-top:.75rem}
+.manual-connect input{flex:1;padding:.6rem;border:1px solid var(--border);border-radius:8px;font-family:monospace;background:var(--bg);color:var(--fg);font-size:.95rem;min-height:44px}
+
+/* RECEIVE — at top on mobile */
+.recv-item{display:flex;align-items:center;gap:.75rem;padding:.85rem;border:1px solid var(--border);border-radius:10px;margin-bottom:.5rem;min-height:56px}
+.recv-icon{font-size:1.5rem}
+.recv-info{flex:1;min-width:0}
+.recv-name{font-weight:500;font-size:.95rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recv-size{font-size:.8rem;color:var(--fg2)}
+.recv-text-preview{font-size:.85rem;color:var(--fg2);max-height:3em;overflow:hidden;margin-top:.25rem;white-space:pre-wrap;word-break:break-all}
+.recv-text-full{display:none;white-space:pre-wrap;word-break:break-all;font-size:.85rem;margin-top:.5rem;max-height:200px;overflow-y:auto;background:var(--bg);padding:.5rem;border-radius:8px}
+.recv-text-full.show{display:block}
+
+/* HISTORY */
+.history-toggle{cursor:pointer;display:flex;align-items:center;gap:.5rem;color:var(--fg2);font-size:.9rem;margin-top:.75rem;padding:.5rem 0;min-height:44px}
+.history-content{display:none}
+.history-content.show{display:block}
+
+/* TOAST */
+.toast-container{position:fixed;bottom:85px;left:50%;transform:translateX(-50%);z-index:1000;display:flex;flex-direction:column;gap:.5rem;width:90%;max-width:360px}
+.toast{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:.75rem 1rem;box-shadow:0 4px 12px rgba(0,0,0,.15);animation:slideUp .3s ease;font-size:.9rem;text-align:center}
+@keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes fadeOut{from{opacity:1}to{opacity:0}}
+
+/* SETTINGS MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;align-items:flex-end;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--bg2);border-radius:var(--radius) var(--radius) 0 0;padding:1.5rem;width:100%;max-width:500px;box-shadow:0 -4px 32px rgba(0,0,0,.2)}
+.modal h3{margin-bottom:1rem}
+.modal label{display:block;margin-bottom:.75rem;font-size:.95rem}
+.modal input[type="text"]{width:100%;padding:.6rem;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);margin-top:.25rem;font-size:1rem;min-height:44px}
+.modal .actions{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem}
+
+/* LANGUAGE */
+.lang-switch{font-size:.8rem;cursor:pointer;color:var(--fg2);border:1px solid var(--border);border-radius:4px;padding:4px 10px;background:var(--bg);min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center}
+
+/* BOTTOM BAR */
+.bottom-bar{position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);padding:.5rem 1rem;display:flex;gap:.5rem;z-index:100;box-shadow:0 -2px 8px rgba(0,0,0,.08)}
+.bottom-bar .btn{flex:1;font-size:1rem;padding:.75rem;min-height:52px}
+
+/* Upload status bar (replaces drop zone on mobile) */
+.upload-status{padding:.75rem;border-radius:10px;background:rgba(74,144,217,.05);border:1px solid var(--border);margin-top:.75rem}
+.upload-status.success{background:rgba(39,174,96,.1);border-color:var(--success)}
+.upload-status.error{background:rgba(231,76,60,.1);border-color:var(--error)}
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="logo">LAN Drop</span>
+  <span id="deviceName" class="info"></span>
+  <span class="spacer"></span>
+  <button class="lang-switch" id="langBtn" onclick="toggleLang()">EN</button>
+  <button class="settings-btn" onclick="openSettings()">&#9881;</button>
+</nav>
+
+<div class="container">
+  <!-- RECEIVE — first on mobile (primary use case) -->
+  <div class="section">
+    <div class="card" id="recvSection">
+      <h3>&#128229; <span data-i18n="received">接收内容</span></h3>
+      <div id="recvList"></div>
+      <div id="recvEmpty" class="device-empty"><span data-i18n="noContent">暂无接收内容</span></div>
+    </div>
+  </div>
+
+  <!-- SEND TABS -->
+  <div class="section" id="sendSection">
+    <div class="tab-bar">
+      <button class="active" onclick="switchTab('file')" id="tabFile">&#128193; <span data-i18n="sendFile">发送文件</span></button>
+      <button onclick="switchTab('text')" id="tabText">&#128196; <span data-i18n="sendText">发送文本</span></button>
+    </div>
+
+    <!-- FILE TAB -->
+    <div class="tab-content active" id="contentFile">
+      <div class="card">
+        <div class="file-actions">
+          <button class="big-btn big-btn-primary" onclick="document.getElementById('fileInput').click()">
+            <span class="icon">&#128193;</span>
+            <span data-i18n="chooseFile">选择文件</span>
+          </button>
+          <button class="big-btn" onclick="document.getElementById('cameraInput').click()">
+            <span class="icon">&#128247;</span>
+            <span data-i18n="takePhoto">拍照发送</span>
+          </button>
+        </div>
+        <input type="file" id="fileInput" multiple onchange="handleFileSelect(this.files)">
+        <input type="file" id="cameraInput" accept="image/*" capture="environment" onchange="handleFileSelect(this.files)">
+        <div class="drop-hint" style="text-align:center;margin-top:.5rem;font-size:.8rem;color:var(--fg2)"><span data-i18n="maxSize">最大 2 GB</span></div>
+        <div id="uploadProgress" style="display:none">
+          <div class="progress-bar"><div class="progress-fill" id="uploadFill"></div></div>
+          <div class="progress-info"><span id="uploadPercent">0%</span><span id="uploadSpeed"></span></div>
+        </div>
+        <div id="sendResult" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- TEXT TAB -->
+    <div class="tab-content" id="contentText">
+      <div class="card">
+        <div class="text-send">
+          <textarea id="textInput" rows="5" placeholder="" data-i18n-placeholder="textPlaceholder"></textarea>
+          <div class="text-footer">
+            <span class="char-count" id="charCount">0</span>
+            <button class="btn btn-primary" id="sendTextBtn" onclick="sendText()" disabled>
+              <span data-i18n="send">发送</span>
+            </button>
+          </div>
+        </div>
+        <div id="textResult" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DEVICES -->
+  <div class="section">
+    <div class="card">
+      <h3>&#128421; <span data-i18n="devices">局域网设备</span></h3>
+      <div class="device-grid" id="deviceList"></div>
+      <div class="manual-connect">
+        <input type="text" id="manualIP" placeholder="192.168.1.x:53217" data-i18n-placeholder="manualIP">
+        <button class="btn btn-outline btn-sm" onclick="connectManual()"><span data-i18n="connect">连接</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="history-toggle" onclick="toggleHistory()">
+    <span id="historyArrow">&#9654;</span>
+    <span data-i18n="history">历史记录</span>
+    <span id="historyCount">(0)</span>
+  </div>
+  <div class="history-content" id="historyContent"></div>
+</div>
+
+<!-- SETTINGS MODAL (bottom sheet style on mobile) -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <h3><span data-i18n="settings">设置</span></h3>
+    <label><span data-i18n="deviceNameLabel">设备名称</span>
+      <input type="text" id="settingsName" placeholder="MyPhone">
+    </label>
+    <div class="actions">
+      <button class="btn btn-outline" onclick="closeSettings()"><span data-i18n="cancel">取消</span></button>
+      <button class="btn btn-primary" onclick="saveSettings()"><span data-i18n="save">保存</span></button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ========== i18n ==========
+const i18n = {
+  zh: {
+    sendFile:'发送文件',sendText:'发送文本',chooseFile:'选择文件',takePhoto:'拍照发送',
+    maxSize:'最大 2 GB',send:'发送',
+    devices:'局域网设备',received:'接收内容',noContent:'暂无接收内容',
+    history:'历史记录',settings:'设置',deviceNameLabel:'设备名称',
+    cancel:'取消',save:'保存',connect:'连接',download:'下载',copyAll:'复制全部',
+    copied:'已复制',sent:'已发送',expand:'展开',collapse:'收起',retry:'重试',
+    resend:'重新发送',uploading:'上传中...',ready:'已就绪',taken:'已被取走',
+    textPlaceholder:'输入要发送的文本...',manualIP:'手动输入 IP:Port',
+    noDevices:'未发现其他设备',
+    fileSent:'文件已发送',textSent:'文本已发送',newFile:'收到新文件',newText:'收到新文本',
+    clipboardPushed:'剪贴板已推送'
+  },
+  en: {
+    sendFile:'Send File',sendText:'Send Text',chooseFile:'Choose File',takePhoto:'Take Photo',
+    maxSize:'Max 2 GB',send:'Send',
+    devices:'LAN Devices',received:'Received',noContent:'No content yet',
+    history:'History',settings:'Settings',deviceNameLabel:'Device Name',
+    cancel:'Cancel',save:'Save',connect:'Connect',download:'Download',copyAll:'Copy All',
+    copied:'Copied',sent:'Sent',expand:'Expand',collapse:'Collapse',retry:'Retry',
+    resend:'Resend',uploading:'Uploading...',ready:'Ready',taken:'Downloaded',
+    textPlaceholder:'Enter text to send...',manualIP:'Enter IP:Port',
+    noDevices:'No devices found',
+    fileSent:'File sent',textSent:'Text sent',newFile:'New file received',newText:'New text received',
+    clipboardPushed:'Clipboard pushed'
+  }
+};
+let lang=(navigator.language||'').startsWith('zh')?'zh':'en';
+function t(key){return(i18n[lang]||i18n.en)[key]||key}
+function applyLang(){
+  document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el=>el.placeholder=t(el.dataset.i18nPlaceholder));
+  document.getElementById('langBtn').textContent=lang==='zh'?'EN':'中文';
+  refreshDeviceList();
+  applyDeviceName();
+}
+function toggleLang(){lang=lang==='zh'?'en':'zh';applyLang()}
+
+// ========== TABS ==========
+function switchTab(tab){
+  document.querySelectorAll('.tab-bar button').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab'+tab.charAt(0).toUpperCase()+tab.slice(1)).classList.add('active');
+  document.getElementById('content'+tab.charAt(0).toUpperCase()+tab.slice(1)).classList.add('active');
+}
+
+// ========== STATE ==========
+let serverInfo={};let devices=[];let recvItems=[];let historyItems=[];let sentTextCache={};let eventSource=null;
+function buildDeviceURL(addr){return /^https?:\/\//i.test(addr)?addr:location.protocol+'//'+addr}
+function getSavedDeviceName(){try{return(localStorage.getItem('landrop.deviceName')||'').trim()}catch(e){return''}}
+function inferDeviceTypeName(){
+  const ua=(navigator.userAgent||'').toLowerCase();
+  const platform=((navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||'').toLowerCase();
+  const isIpad=/ipad/.test(ua)||(platform==='macintel'&&navigator.maxTouchPoints>1);
+  const isIphone=/iphone|ipod/.test(ua);
+  const isAndroid=/android/.test(ua);
+  const isMobile=/mobile/.test(ua);
+  const isTablet=isIpad||/tablet/.test(ua)||(isAndroid&&!isMobile);
+  if(isIphone)return'iPhone';
+  if(isIpad)return'iPad';
+  if(isAndroid&&isMobile)return lang==='zh'?'Android 手机':'Android Phone';
+  if(isTablet)return lang==='zh'?'Android 平板':'Android Tablet';
+  if(platform.includes('win'))return lang==='zh'?'Windows 电脑':'Windows PC';
+  if(platform.includes('mac'))return'Mac';
+  if(platform.includes('linux'))return lang==='zh'?'Linux 电脑':'Linux PC';
+  return lang==='zh'?'本机设备':'This Device';
+}
+function currentDeviceName(){return getSavedDeviceName()||inferDeviceTypeName()}
+function applyDeviceName(){
+  const name=currentDeviceName();
+  const label=document.getElementById('deviceName');
+  const input=document.getElementById('settingsName');
+  if(label)label.textContent=name;
+  if(input){
+    input.value=name;
+    input.placeholder=inferDeviceTypeName();
+  }
+}
+
+// ========== INIT ==========
+async function init(){
+  applyLang();
+  try{
+    const r=await fetch('/info');serverInfo=await r.json();
+  }catch(e){}
+  applyDeviceName();
+  connectSSE();fetchDevices();setInterval(fetchDevices,5000);
+}
+
+// ========== SSE ==========
+function connectSSE(){
+  if(eventSource)eventSource.close();
+  eventSource=new EventSource('/events');
+  eventSource.addEventListener('file_ready',e=>{const d=JSON.parse(e.data);addRecvItem(d);if(d.type==='text')showToast(t('newText'));else showToast(t('newFile')+': '+d.name)});
+  eventSource.addEventListener('progress',e=>{updateProgress(JSON.parse(e.data))});
+  eventSource.addEventListener('done',e=>{markDone(JSON.parse(e.data).token)});
+  eventSource.addEventListener('device_found',e=>{addDevice(JSON.parse(e.data))});
+  eventSource.addEventListener('device_lost',e=>{removeDevice(JSON.parse(e.data).addr)});
+  eventSource.addEventListener('clipboard',e=>{const d=JSON.parse(e.data);navigator.clipboard.writeText(d.content).then(()=>showToast(t('clipboardPushed')))});
+  eventSource.onerror=()=>{setTimeout(connectSSE,3000)};
+}
+
+// ========== FILE UPLOAD ==========
+async function handleFileSelect(files){
+  if(!files||files.length===0)return;
+  const prog=document.getElementById('uploadProgress'),result=document.getElementById('sendResult');
+  prog.style.display='block';result.style.display='none';
+  const fd=new FormData();let total=0;
+  for(const f of files){total+=f.size;fd.append('file',f)}
+  if(total>2*1024*1024*1024){prog.style.display='none';result.style.display='block';result.innerHTML='<div class="upload-status error">文件过大，单次限制 2 GB</div>';return}
+  try{
+    const xhr=new XMLHttpRequest();
+    xhr.upload.onprogress=e=>{if(e.lengthComputable){const pct=Math.round(e.loaded/e.total*100);document.getElementById('uploadFill').style.width=pct+'%';document.getElementById('uploadPercent').textContent=pct+'%'}};
+    const resp=await new Promise((resolve,reject)=>{
+      xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300){try{resolve(JSON.parse(xhr.responseText))}catch(e){reject(new Error('invalid response'))}}else{try{const d=JSON.parse(xhr.responseText);reject(new Error(d.error||'upload failed'))}catch(e){reject(new Error('upload failed: '+xhr.status))}}};
+      xhr.onerror=()=>reject(new Error('upload failed'));xhr.open('POST','/send/file');xhr.send(fd);
+    });
+    prog.style.display='none';
+    const url=location.origin+'/recv/'+resp.token;
+    const displayName=files.length>1?files.length+' files':esc(files[0].name);
+    result.style.display='block';
+    result.innerHTML=`<div class="send-result"><div>&#10003; ${displayName} (${formatSize(resp.size)})</div><div class="url">${esc(url)}</div><div class="actions"><button class="btn btn-sm btn-primary" onclick="copyText('${esc(url)}',this)">${t('copyAll')}</button><button class="btn btn-sm btn-outline" onclick="resetUpload()">${t('resend')}</button></div></div>`;
+    showToast(t('fileSent'));
+  }catch(e){prog.style.display='none';result.style.display='block';result.innerHTML=`<div class="upload-status error">${e.message} <button class="btn btn-sm btn-error" onclick="resetUpload()">${t('retry')}</button></div>`}
+}
+function resetUpload(){document.getElementById('uploadProgress').style.display='none';document.getElementById('sendResult').style.display='none';document.getElementById('uploadFill').style.width='0%';document.getElementById('fileInput').value='';document.getElementById('cameraInput').value=''}
+
+// ========== TEXT SEND ==========
+const textInput=document.getElementById('textInput'),charCount=document.getElementById('charCount'),sendTextBtn=document.getElementById('sendTextBtn');
+textInput.addEventListener('input',()=>{const len=new Blob([textInput.value]).size;charCount.textContent=formatSize(len);charCount.classList.toggle('warn',len>9*1024*1024);sendTextBtn.disabled=!textInput.value.trim()||len>10*1024*1024});
+async function sendText(){
+  const content=textInput.value;if(!content.trim())return;sendTextBtn.disabled=true;
+  try{const r=await fetch('/send/text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});const d=await r.json();if(!r.ok)throw new Error(d.error);
+    sentTextCache[d.token]=content;
+    if(recvItems.some(i=>i.token===d.token))renderRecvList();
+    const url=location.origin+'/recv/'+d.token;const res=document.getElementById('textResult');res.style.display='block';
+    res.innerHTML=`<div class="send-result"><div>&#10003; ${t('sent')} (${formatSize(d.length)})</div><div class="url">${url}</div><div class="actions"><button class="btn btn-sm btn-primary" onclick="copyText('${url}',this)">${t('copyAll')}</button></div></div>`;
+    showToast(t('textSent'));
+  }catch(e){showToast(e.message)}finally{sendTextBtn.disabled=!textInput.value.trim()}
+}
+
+// ========== DEVICES ==========
+async function fetchDevices(){try{const r=await fetch('/devices');const d=await r.json();devices=d.devices||[];refreshDeviceList()}catch(e){}}
+function addDevice(d){const idx=devices.findIndex(x=>x.addr===d.addr);if(idx>=0)devices[idx]={...devices[idx],...d,last_seen:Date.now()/1000};else devices.push({...d,last_seen:Date.now()/1000});refreshDeviceList()}
+function removeDevice(addr){devices=devices.filter(d=>d.addr!==addr);refreshDeviceList()}
+function refreshDeviceList(){
+  const el=document.getElementById('deviceList');
+  if(devices.length===0){el.innerHTML=`<div class="device-empty">${t('noDevices')}</div>`;return}
+  el.innerHTML=devices.map(d=>{
+    const osIcon=d.os==='darwin'?'&#127823;':d.os==='windows'?'&#128187;':'&#128039;';
+    const online=(Date.now()/1000-d.last_seen)<30;
+    return `<div class="device-card" onclick="window.open('${buildDeviceURL(d.addr)}','_blank')"><div class="device-dot ${online?'':'offline'}"></div><span class="device-os">${osIcon}</span><div><div class="device-name">${esc(d.name||d.addr)}</div><div class="device-addr">${d.addr}</div></div></div>`;
+  }).join('');
+}
+function connectManual(){const ip=document.getElementById('manualIP').value.trim();if(ip)window.open(buildDeviceURL(ip),'_blank')}
+
+// ========== RECEIVE ==========
+function addRecvItem(item){recvItems.unshift(item);document.getElementById('recvEmpty').style.display='none';renderRecvList()}
+function renderRecvList(){
+  const el=document.getElementById('recvList');
+  el.innerHTML=recvItems.map(item=>{
+    if(item.type==='text'){return `<div class="recv-item" id="recv-${item.token}"><div class="recv-icon">&#128196;</div><div class="recv-info"><div class="recv-name">${t('newText')}</div><div class="recv-size">${formatSize(item.size)}</div><div class="recv-text-preview" id="preview-${item.token}"></div><div class="recv-text-full" id="full-${item.token}"></div></div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn btn-sm btn-primary" onclick="copyRecvText('${item.token}',this)">${t('copyAll')}</button><button class="btn btn-sm btn-outline" onclick="toggleTextFull('${item.token}')">${t('expand')}</button></div></div>`}
+    return `<div class="recv-item" id="recv-${item.token}"><div class="recv-icon">&#128196;</div><div class="recv-info"><div class="recv-name">${esc(item.name)}</div><div class="recv-size">${formatSize(item.size)}</div><div class="progress-bar" id="pbar-${item.token}" style="display:none"><div class="progress-fill" id="pfill-${item.token}"></div></div></div><a class="btn btn-sm btn-primary" href="/recv/${item.token}" download="${esc(item.name)}">${t('download')}</a></div>`;
+  }).join('');
+  recvItems.filter(i=>i.type==='text').forEach(loadTextContent);
+}
+async function loadTextContent(item){
+  const cached=sentTextCache[item.token];
+  if(cached!==undefined){renderTextContent(item.token,cached);return}
+  try{const r=await fetch('/preview/'+item.token);const d=await r.json();
+    renderTextContent(item.token,d.preview||'');
+  }catch(e){}
+}
+function renderTextContent(token,content){
+  const pre=document.getElementById('preview-'+token),full=document.getElementById('full-'+token);
+  if(pre)pre.textContent=content.substring(0,200);
+  if(full){
+    if(looksLikeURL(content)){full.innerHTML=esc(content).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>')}
+    else{full.textContent=content}
+  }
+}
+function looksLikeURL(text){return /https?:\/\//.test(text)}
+async function copyRecvText(token,btn){try{let content=sentTextCache[token];if(content===undefined){const r=await fetch('/recv/'+token);const d=await r.json();content=d.content}await navigator.clipboard.writeText(content);const orig=btn.textContent;btn.textContent=t('copied');btn.classList.add('btn-success');setTimeout(()=>{btn.textContent=orig;btn.classList.remove('btn-success')},2000)}catch(e){showToast('Copy failed')}}
+function toggleTextFull(token){document.getElementById('full-'+token).classList.toggle('show')}
+function updateProgress(d){const bar=document.getElementById('pbar-'+d.token),fill=document.getElementById('pfill-'+d.token);if(bar&&fill){bar.style.display='block';fill.style.width=(d.total>0?Math.round(d.bytes/d.total*100):0)+'%'}}
+function markDone(token){const item=recvItems.find(i=>i.token===token);if(item){historyItems.unshift(item);if(historyItems.length>20)historyItems=historyItems.slice(0,20);document.getElementById('historyCount').textContent='('+historyItems.length+')'}}
+
+// ========== HISTORY ==========
+function toggleHistory(){const el=document.getElementById('historyContent'),arrow=document.getElementById('historyArrow');if(el.classList.contains('show')){el.classList.remove('show');arrow.innerHTML='&#9654;'}else{el.classList.add('show');arrow.innerHTML='&#9660;';renderHistory()}}
+function renderHistory(){const el=document.getElementById('historyContent');if(historyItems.length===0){el.innerHTML=`<div class="device-empty">${t('noContent')}</div>`;return}el.innerHTML=historyItems.map(item=>`<div class="recv-item"><div class="recv-icon">${item.type==='text'?'&#128196;':'&#128196;'}</div><div class="recv-info"><div class="recv-name">${esc(item.name||t('newText'))}</div><div class="recv-size">${formatSize(item.size)}</div></div></div>`).join('')}
+
+// ========== SETTINGS ==========
+function openSettings(){applyDeviceName();document.getElementById('settingsModal').classList.add('show')}
+function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
+function saveSettings(){
+  const input=document.getElementById('settingsName');
+  const name=input.value.trim();
+  try{
+    if(name)localStorage.setItem('landrop.deviceName',name);
+    else localStorage.removeItem('landrop.deviceName');
+  }catch(e){}
+  applyDeviceName();
+  closeSettings();
+  showToast(t('save'));
+}
+
+// ========== TOAST ==========
+function showToast(msg){const c=document.getElementById('toastContainer');const el=document.createElement('div');el.className='toast';el.textContent=msg;c.appendChild(el);setTimeout(()=>{el.style.animation='fadeOut .3s ease forwards';setTimeout(()=>el.remove(),300)},3000)}
+
+// ========== UTILS ==========
+function formatSize(b){if(b>=1073741824)return(b/1073741824).toFixed(1)+' GB';if(b>=1048576)return(b/1048576).toFixed(1)+' MB';if(b>=1024)return(b/1024).toFixed(1)+' KB';return b+' B'}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+async function copyText(text,btn){try{await navigator.clipboard.writeText(text);const o=btn.textContent;btn.textContent=t('copied');btn.classList.add('btn-success');setTimeout(()=>{btn.textContent=o;btn.classList.remove('btn-success')},2000)}catch(e){}}
+document.getElementById('settingsModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeSettings()});
+
+init();
+</script>
+</body>
+</html>

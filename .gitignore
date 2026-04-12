@@ -1,0 +1,7 @@
+dist/
+*.exe
+*.exe~
+*.zip
+*.tar.gz
+SHA256SUMS.txt
+

@@ -55,7 +55,11 @@ func handleQR(w http.ResponseWriter, r *http.Request, addr string) {
 		}
 	}
 
-	url := "http://" + addr
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	url := scheme + "://" + addr
 	svg, err := generateQRSVG(url, size)
 	if err != nil {
 		http.Error(w, "failed to generate QR code", http.StatusInternalServerError)

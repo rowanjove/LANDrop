@@ -16,12 +16,37 @@ func getLocalIP() string {
 	if err != nil {
 		return "127.0.0.1"
 	}
+
+	// Prefer private network IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+	var fallback string
 	for _, addr := range addrs {
-		if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
-			if ipNet.IP.To4() != nil {
-				return ipNet.IP.String()
-			}
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok || ipNet.IP.IsLoopback() {
+			continue
 		}
+		ip4 := ipNet.IP.To4()
+		if ip4 == nil {
+			continue
+		}
+		// Check if private network
+		if ip4[0] == 192 && ip4[1] == 168 {
+			return ip4.String() // Best: 192.168.x.x
+		}
+		if ip4[0] == 10 {
+			return ip4.String() // Good: 10.x.x.x
+		}
+		if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 {
+			if fallback == "" {
+				fallback = ip4.String() // OK: 172.16-31.x.x (might be Docker/WSL)
+			}
+			continue
+		}
+		if fallback == "" {
+			fallback = ip4.String()
+		}
+	}
+	if fallback != "" {
+		return fallback
 	}
 	return "127.0.0.1"
 }
@@ -37,7 +62,7 @@ func findAvailablePort(startPort int) (int, error) {
 	return 0, fmt.Errorf("端口 %d-%d 均被占用", startPort, startPort+10)
 }
 
-func startServer(port int, pin string, useTLS bool) {
+func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
 	actualPort, err := findAvailablePort(port)
 	if err != nil {
 		log.Fatalf("Error: %v", err)
@@ -51,6 +76,7 @@ func startServer(port int, pin string, useTLS bool) {
 	listenAddr := fmt.Sprintf("0.0.0.0:%d", actualPort)
 
 	app := NewApp(addr, pin)
+	app.oneTimeUse = oneTimeUse
 	app.mdns = NewMDNSManager(actualPort, app.broker)
 
 	mux := http.NewServeMux()

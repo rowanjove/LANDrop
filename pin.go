@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -10,6 +13,7 @@ type PINManager struct {
 	mu       sync.Mutex
 	pin      string
 	attempts map[string]*attemptInfo
+	sessions map[string]*sessionInfo
 }
 
 type attemptInfo struct {
@@ -17,15 +21,23 @@ type attemptInfo struct {
 	lockedAt time.Time
 }
 
+type sessionInfo struct {
+	ip        string
+	expiresAt time.Time
+}
+
 const (
-	maxAttempts = 5
-	lockDuration = 60 * time.Second
+	maxAttempts     = 5
+	lockDuration    = 60 * time.Second
+	sessionTTL      = 24 * time.Hour
+	sessionTokenLen = 16
 )
 
 func NewPINManager(pin string) *PINManager {
 	return &PINManager{
 		pin:      pin,
 		attempts: make(map[string]*attemptInfo),
+		sessions: make(map[string]*sessionInfo),
 	}
 }
 
@@ -84,18 +96,17 @@ func (p *PINManager) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Check session cookie
-		cookie, err := r.Cookie("landrop_pin")
-		if err == nil && cookie.Value == p.pin {
+		ip := remoteIP(r)
+
+		// Check server-issued session cookie before asking for the PIN again.
+		cookie, err := r.Cookie("landrop_session")
+		if err == nil && p.validSession(ip, cookie.Value) {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// Check PIN header
+		// Check PIN header only (not query string, to avoid leaking in logs)
 		pin := r.Header.Get("X-LanDrop-PIN")
-		if pin == "" {
-			pin = r.URL.Query().Get("pin")
-		}
 
 		if pin == "" {
 			// Return PIN entry page for browser requests
@@ -110,7 +121,6 @@ func (p *PINManager) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ip := r.RemoteAddr
 		ok, remaining, locked := p.Verify(ip, pin)
 		if locked {
 			writeJSON(w, http.StatusTooManyRequests, map[string]interface{}{
@@ -128,15 +138,74 @@ func (p *PINManager) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Set session cookie
+		sessionToken, err := p.createSession(ip)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"error": "session creation failed",
+				"code":  "SESSION_FAILED",
+			})
+			return
+		}
+
 		http.SetCookie(w, &http.Cookie{
-			Name:  "landrop_pin",
-			Value: p.pin,
-			Path:  "/",
+			Name:     "landrop_session",
+			Value:    sessionToken,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   r.TLS != nil,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   int(sessionTTL.Seconds()),
 		})
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (p *PINManager) createSession(ip string) (string, error) {
+	tokenBytes := make([]byte, sessionTokenLen)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", err
+	}
+	token := hex.EncodeToString(tokenBytes)
+
+	now := time.Now()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pruneExpiredSessionsLocked(now)
+	p.sessions[token] = &sessionInfo{
+		ip:        ip,
+		expiresAt: now.Add(sessionTTL),
+	}
+	return token, nil
+}
+
+func (p *PINManager) validSession(ip string, token string) bool {
+	now := time.Now()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pruneExpiredSessionsLocked(now)
+
+	session, ok := p.sessions[token]
+	if !ok {
+		return false
+	}
+	return session.ip == ip
+}
+
+func (p *PINManager) pruneExpiredSessionsLocked(now time.Time) {
+	for token, session := range p.sessions {
+		if now.After(session.expiresAt) {
+			delete(p.sessions, token)
+		}
+	}
+}
+
+func remoteIP(r *http.Request) string {
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if ip == "" {
+		return r.RemoteAddr
+	}
+	return ip
 }
 
 func servePINPage(w http.ResponseWriter) {
@@ -166,9 +235,10 @@ button:hover{background:#357ABD}
 <script>
 document.getElementById('f').onsubmit=async e=>{
 e.preventDefault();const p=document.getElementById('p').value;
-const r=await fetch('/info',{headers:{'X-LanDrop-PIN':p}});
-if(r.ok){document.cookie='landrop_pin='+p+';path=/';location.reload()}
-else{const d=await r.json();const el=document.getElementById('e');
-el.textContent=d.error||'PIN incorrect';el.style.display='block'}};
+const r=await fetch('/',{headers:{'X-LanDrop-PIN':p}});
+if(r.ok){location.reload()}
+else{try{const d=await r.json();const el=document.getElementById('e');
+el.textContent=d.error||'PIN incorrect';el.style.display='block'}catch(x){
+document.getElementById('e').textContent='PIN incorrect';document.getElementById('e').style.display='block'}}};
 </script></body></html>`))
 }

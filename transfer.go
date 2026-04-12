@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,9 +14,9 @@ import (
 )
 
 const (
-	maxFileSize     = 500 * 1024 * 1024 // 500 MB
-	memoryThreshold = 100 * 1024 * 1024 // 100 MB
-	maxTextSize     = 1 * 1024 * 1024   // 1 MB
+	maxFileSize     = 2 * 1024 * 1024 * 1024 // 2 GB
+	memoryThreshold = 100 * 1024 * 1024      // 100 MB
+	maxTextSize     = 10 * 1024 * 1024       // 10 MB
 )
 
 type TransferItem struct {
@@ -27,6 +30,7 @@ type TransferItem struct {
 	ExpiresAt  int64  `json:"expires_at"`
 	Downloaded bool   `json:"downloaded"`
 	OneTimeUse bool   `json:"-"`
+	Claimed    bool   `json:"-"`
 }
 
 type TransferStore struct {
@@ -39,13 +43,28 @@ type TransferStore struct {
 func NewTransferStore() *TransferStore {
 	tmpDir, err := os.MkdirTemp("", "landrop-*")
 	if err != nil {
-		tmpDir = os.TempDir()
+		log.Fatalf("failed to create temp directory: %v", err)
 	}
 	return &TransferStore{
 		items:   make(map[string]*TransferItem),
 		history: make([]*TransferItem, 0),
 		tempDir: tmpDir,
 	}
+}
+
+// sanitizeFilename strips path separators and traversal sequences from filenames
+func sanitizeFilename(name string) string {
+	// Take only the base name, stripping any directory components
+	name = filepath.Base(name)
+	// On Windows, also handle forward slashes
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	// Reject empty or dot-only names
+	if name == "" || name == "." || name == ".." {
+		name = "unnamed"
+	}
+	return name
 }
 
 func (s *TransferStore) Cleanup() {
@@ -66,6 +85,7 @@ func generateToken() string {
 }
 
 func (s *TransferStore) AddFile(name string, data []byte, size int64) (*TransferItem, error) {
+	name = sanitizeFilename(name)
 	token := generateToken()
 	item := &TransferItem{
 		Token:     token,
@@ -92,7 +112,12 @@ func (s *TransferStore) AddFile(name string, data []byte, size int64) (*Transfer
 	return item, nil
 }
 
-func (s *TransferStore) AddFileFromPath(name string, srcPath string, size int64) (*TransferItem, error) {
+func (s *TransferStore) AddFileFromReader(name string, src io.Reader, size int64) (*TransferItem, error) {
+	name = sanitizeFilename(name)
+	if size > maxFileSize {
+		return nil, fmt.Errorf("file too large")
+	}
+
 	token := generateToken()
 	item := &TransferItem{
 		Token:     token,
@@ -103,28 +128,90 @@ func (s *TransferStore) AddFileFromPath(name string, srcPath string, size int64)
 		ExpiresAt: 0,
 	}
 
-	if size <= memoryThreshold {
-		data, err := os.ReadFile(srcPath)
+	if size >= 0 && size <= memoryThreshold {
+		data, err := io.ReadAll(src)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file: %w", err)
 		}
 		item.Content = data
+		item.Size = int64(len(data))
 	} else {
 		tmpFile := filepath.Join(s.tempDir, token+"_"+name)
-		input, err := os.ReadFile(srcPath)
+		f, err := os.Create(tmpFile)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to create temp file: %w", err)
 		}
-		if err := os.WriteFile(tmpFile, input, 0600); err != nil {
-			return nil, err
+		written, copyErr := io.Copy(f, src)
+		closeErr := f.Close()
+		if copyErr != nil {
+			_ = os.Remove(tmpFile)
+			return nil, fmt.Errorf("failed to write temp file: %w", copyErr)
+		}
+		if closeErr != nil {
+			_ = os.Remove(tmpFile)
+			return nil, fmt.Errorf("failed to close temp file: %w", closeErr)
 		}
 		item.FilePath = tmpFile
+		item.Size = written
 	}
 
 	s.mu.Lock()
 	s.items[token] = item
 	s.mu.Unlock()
 	return item, nil
+}
+
+func (s *TransferStore) AddTempFile(name string, tempPath string, size int64) (*TransferItem, error) {
+	name = sanitizeFilename(name)
+	if size > maxFileSize {
+		return nil, fmt.Errorf("file too large")
+	}
+
+	token := generateToken()
+	targetPath := filepath.Join(s.tempDir, token+"_"+name)
+	if filepath.Clean(tempPath) != filepath.Clean(targetPath) {
+		if err := os.Rename(tempPath, targetPath); err != nil {
+			if err := copyFile(tempPath, targetPath); err != nil {
+				return nil, fmt.Errorf("failed to move temp file: %w", err)
+			}
+			_ = os.Remove(tempPath)
+		}
+	} else {
+		targetPath = tempPath
+	}
+
+	if size <= 0 {
+		info, err := os.Stat(targetPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat temp file: %w", err)
+		}
+		size = info.Size()
+	}
+
+	item := &TransferItem{
+		Token:     token,
+		Type:      "file",
+		Name:      name,
+		Size:      size,
+		FilePath:  targetPath,
+		CreatedAt: time.Now().Unix(),
+		ExpiresAt: 0,
+	}
+
+	s.mu.Lock()
+	s.items[token] = item
+	s.mu.Unlock()
+	return item, nil
+}
+
+func (s *TransferStore) AddFileFromPath(name string, srcPath string, size int64) (*TransferItem, error) {
+	f, err := os.Open(srcPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer f.Close()
+
+	return s.AddFileFromReader(name, f, size)
 }
 
 func (s *TransferStore) AddText(content string) (*TransferItem, error) {
@@ -148,24 +235,80 @@ func (s *TransferStore) AddText(content string) (*TransferItem, error) {
 
 func (s *TransferStore) Get(token string) (*TransferItem, bool) {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
 	item, ok := s.items[token]
-	s.mu.RUnlock()
-	return item, ok
+	if !ok {
+		return nil, false
+	}
+	// Return a shallow copy to avoid races on shared fields
+	cp := *item
+	return &cp, true
 }
 
-func (s *TransferStore) MarkDownloaded(token string) {
+func (s *TransferStore) BeginDownload(token string) (*TransferItem, bool, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	item, ok := s.items[token]
+	if !ok {
+		return nil, false, false
+	}
+	if item.OneTimeUse && (item.Downloaded || item.Claimed) {
+		return nil, true, true
+	}
+	if item.OneTimeUse {
+		item.Claimed = true
+	}
+
+	cp := *item
+	return &cp, true, false
+}
+
+func (s *TransferStore) FinishDownload(token string, success bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if item, ok := s.items[token]; ok {
-		item.Downloaded = true
-		s.addToHistory(item)
 		if item.OneTimeUse {
-			if item.FilePath != "" {
-				os.Remove(item.FilePath)
+			if !item.Claimed {
+				return
 			}
-			delete(s.items, token)
+			if success {
+				item.Downloaded = true
+				item.Claimed = false
+				s.addToHistory(item)
+				if item.FilePath != "" {
+					_ = os.Remove(item.FilePath)
+				}
+				delete(s.items, token)
+				return
+			}
+			item.Claimed = false
+			return
+		}
+		if success && !item.Downloaded {
+			item.Downloaded = true
+			s.addToHistory(item)
 		}
 	}
+}
+
+func copyFile(srcPath string, dstPath string) error {
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dst, err := os.Create(dstPath)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return err
+	}
+	return dst.Close()
 }
 
 func (s *TransferStore) addToHistory(item *TransferItem) {

@@ -45,7 +45,7 @@ func (m *MDNSManager) Start() error {
 		"_landrop._tcp",
 		"local.",
 		m.port,
-		[]string{"version=1.0.0", "os=" + getOS()},
+		[]string{"version=" + version, "os=" + getOS()},
 		nil,
 	)
 	if err != nil {
