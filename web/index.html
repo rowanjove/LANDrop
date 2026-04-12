@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>LAN Drop</title>
+<style>
+:root {
+  --bg: #f8f9fa; --bg2: #ffffff; --fg: #1a1a2e; --fg2: #555; --border: #ddd;
+  --primary: #4A90D9; --primary-hover: #357ABD; --success: #27ae60; --error: #e74c3c;
+  --shadow: 0 2px 8px rgba(0,0,0,.08); --radius: 10px;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1a1a2e; --bg2:#16213e; --fg:#e8e8e8; --fg2:#aaa; --border:#333;
+  --shadow:0 2px 8px rgba(0,0,0,.3);
+}}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);min-height:100vh}
+a{color:var(--primary);text-decoration:none}
+
+/* NAV */
+nav{position:sticky;top:0;background:var(--bg2);border-bottom:1px solid var(--border);padding:.75rem 1rem;display:flex;align-items:center;gap:1rem;z-index:100;box-shadow:var(--shadow)}
+nav .logo{font-size:1.3rem;font-weight:700;color:var(--primary)}
+nav .info{margin-left:auto;font-size:.85rem;color:var(--fg2)}
+nav .settings-btn{background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--fg2);padding:4px}
+
+/* LAYOUT */
+.container{max-width:960px;margin:0 auto;padding:1rem}
+.grid{display:grid;grid-template-columns:1fr;gap:1rem}
+@media(min-width:640px){.grid{grid-template-columns:1fr 1fr}}
+@media(min-width:640px){.grid-3{grid-template-columns:1fr 1fr 1fr}}
+
+/* CARD */
+.card{background:var(--bg2);border-radius:var(--radius);padding:1.25rem;box-shadow:var(--shadow)}
+.card h3{font-size:1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.5rem}
+
+/* DROP ZONE */
+.drop-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:2rem 1rem;text-align:center;cursor:pointer;transition:all .2s;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem}
+.drop-zone:hover,.drop-zone.dragover{border-color:var(--primary);background:rgba(74,144,217,.05)}
+.drop-zone.dragover{border-style:solid;background:rgba(74,144,217,.1)}
+.drop-zone.dragover .drop-text{display:none}
+.drop-zone.dragover .drop-active{display:block}
+.drop-zone .drop-active{display:none;color:var(--primary);font-weight:600}
+.drop-zone.uploading{pointer-events:none;opacity:.8}
+.drop-zone.ready{border-color:var(--success);border-style:solid}
+.drop-zone.error{border-color:var(--error);border-style:solid}
+.drop-icon{font-size:2rem;opacity:.5}
+.drop-hint{font-size:.85rem;color:var(--fg2)}
+input[type="file"]{display:none}
+
+/* PROGRESS */
+.progress-bar{width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:.5rem}
+.progress-fill{height:100%;background:var(--primary);transition:width .2s;border-radius:3px}
+.progress-info{font-size:.8rem;color:var(--fg2);margin-top:.25rem;display:flex;justify-content:space-between}
+
+/* SEND RESULT */
+.send-result{margin-top:.75rem;padding:.75rem;background:rgba(39,174,96,.1);border-radius:8px;font-size:.9rem}
+.send-result .url{word-break:break-all;color:var(--primary);font-family:monospace;font-size:.8rem}
+.send-result .actions{margin-top:.5rem;display:flex;gap:.5rem;flex-wrap:wrap}
+
+/* TEXT AREA */
+.text-send textarea{width:100%;min-height:100px;max-height:300px;resize:vertical;border:1px solid var(--border);border-radius:8px;padding:.75rem;font-family:inherit;font-size:.9rem;background:var(--bg);color:var(--fg)}
+.text-send textarea:focus{outline:none;border-color:var(--primary)}
+.text-footer{display:flex;justify-content:space-between;align-items:center;margin-top:.5rem}
+.char-count{font-size:.8rem;color:var(--fg2)}
+.char-count.warn{color:var(--error)}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:.35rem;padding:.5rem 1rem;border:none;border-radius:6px;font-size:.9rem;cursor:pointer;transition:all .15s;font-family:inherit}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-hover)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-sm{padding:.35rem .75rem;font-size:.8rem}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--fg)}
+.btn-outline:hover{border-color:var(--primary);color:var(--primary)}
+.btn-success{background:var(--success);color:#fff}
+.btn-error{background:var(--error);color:#fff}
+
+/* QR */
+.qr-section{text-align:center}
+.qr-section img{max-width:200px;margin:.5rem auto;display:block}
+@media(prefers-color-scheme:dark){.qr-section img{filter:invert(1)}}
+.qr-addr{font-family:monospace;font-size:.85rem;color:var(--fg2);word-break:break-all;margin-top:.5rem}
+
+/* DEVICE LIST */
+.device-grid{display:grid;gap:.5rem}
+.device-card{display:flex;align-items:center;gap:.75rem;padding:.75rem;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s}
+.device-card:hover{border-color:var(--primary);background:rgba(74,144,217,.05)}
+.device-dot{width:8px;height:8px;border-radius:50%;background:var(--success);flex-shrink:0}
+.device-dot.offline{background:#999}
+.device-name{font-weight:500;font-size:.9rem}
+.device-addr{font-size:.8rem;color:var(--fg2);font-family:monospace}
+.device-os{font-size:1.1rem}
+.device-empty{text-align:center;color:var(--fg2);padding:1rem;font-size:.9rem}
+.manual-connect{display:flex;gap:.5rem;margin-top:.75rem}
+.manual-connect input{flex:1;padding:.5rem;border:1px solid var(--border);border-radius:6px;font-family:monospace;background:var(--bg);color:var(--fg)}
+
+/* RECEIVE */
+.recv-item{display:flex;align-items:center;gap:.75rem;padding:.75rem;border:1px solid var(--border);border-radius:8px;margin-bottom:.5rem}
+.recv-icon{font-size:1.5rem}
+.recv-info{flex:1;min-width:0}
+.recv-name{font-weight:500;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recv-size{font-size:.8rem;color:var(--fg2)}
+.recv-text-preview{font-size:.85rem;color:var(--fg2);max-height:4.5em;overflow:hidden;margin-top:.25rem;white-space:pre-wrap;word-break:break-all}
+.recv-text-full{display:none;white-space:pre-wrap;word-break:break-all;font-size:.85rem;margin-top:.25rem;max-height:300px;overflow-y:auto;background:var(--bg);padding:.5rem;border-radius:6px}
+.recv-text-full.show{display:block}
+
+/* HISTORY */
+.history-toggle{cursor:pointer;display:flex;align-items:center;gap:.5rem;color:var(--fg2);font-size:.9rem;margin-top:1rem}
+.history-content{display:none}
+.history-content.show{display:block}
+
+/* TOAST */
+.toast-container{position:fixed;bottom:1rem;right:1rem;z-index:1000;display:flex;flex-direction:column;gap:.5rem}
+.toast{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;box-shadow:0 4px 12px rgba(0,0,0,.15);animation:slideIn .3s ease;font-size:.9rem;max-width:320px}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes fadeOut{from{opacity:1}to{opacity:0}}
+
+/* SETTINGS MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--bg2);border-radius:var(--radius);padding:1.5rem;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.2)}
+.modal h3{margin-bottom:1rem}
+.modal label{display:block;margin-bottom:.75rem;font-size:.9rem}
+.modal input[type="text"]{width:100%;padding:.5rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);margin-top:.25rem}
+.modal .actions{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem}
+
+/* LANGUAGE */
+.lang-switch{font-size:.8rem;cursor:pointer;color:var(--fg2);border:1px solid var(--border);border-radius:4px;padding:2px 8px;background:var(--bg)}
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="logo">LAN Drop</span>
+  <span id="deviceName" class="info"></span>
+  <span id="addrDisplay" class="info" style="font-family:monospace"></span>
+  <button class="lang-switch" id="langBtn" onclick="toggleLang()">EN</button>
+  <button class="settings-btn" onclick="openSettings()" title="Settings">&#9881;</button>
+</nav>
+
+<div class="container">
+  <div class="grid" style="margin-bottom:1rem">
+    <!-- SEND FILE -->
+    <div class="card">
+      <h3>&#128228; <span data-i18n="sendFile">发送文件</span></h3>
+      <div class="drop-zone" id="dropZone" tabindex="0" role="button"
+           ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
+           ondrop="handleDrop(event)" onclick="document.getElementById('fileInput').click()"
+           onkeydown="if(event.key==='Enter')this.click()">
+        <div class="drop-icon">&#128193;</div>
+        <div class="drop-text"><span data-i18n="dropHint">拖拽文件到此处，或点击选择</span></div>
+        <div class="drop-active"><span data-i18n="dropRelease">松开即发送</span></div>
+        <div class="drop-hint"><span data-i18n="maxSize">最大 500 MB</span></div>
+      </div>
+      <input type="file" id="fileInput" multiple onchange="handleFileSelect(this.files)">
+      <div id="uploadProgress" style="display:none">
+        <div class="progress-bar"><div class="progress-fill" id="uploadFill"></div></div>
+        <div class="progress-info"><span id="uploadPercent">0%</span><span id="uploadSpeed"></span></div>
+      </div>
+      <div id="sendResult" style="display:none"></div>
+    </div>
+
+    <!-- SEND TEXT -->
+    <div class="card">
+      <h3>&#128196; <span data-i18n="sendText">发送文本</span></h3>
+      <div class="text-send">
+        <textarea id="textInput" rows="4" placeholder="" data-i18n-placeholder="textPlaceholder"></textarea>
+        <div class="text-footer">
+          <span class="char-count" id="charCount">0</span>
+          <button class="btn btn-primary" id="sendTextBtn" onclick="sendText()" disabled>
+            <span data-i18n="send">发送</span>
+          </button>
+        </div>
+      </div>
+      <div id="textResult" style="display:none"></div>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-bottom:1rem">
+    <!-- QR CODE -->
+    <div class="card qr-section">
+      <h3 style="justify-content:center">&#128274; <span data-i18n="scanQR">扫码连接</span></h3>
+      <img id="qrImg" src="/qr?size=200" alt="QR Code">
+      <div class="qr-addr" id="qrAddr"></div>
+    </div>
+
+    <!-- DEVICES -->
+    <div class="card">
+      <h3>&#128421; <span data-i18n="devices">局域网设备</span></h3>
+      <div class="device-grid" id="deviceList"></div>
+      <div class="manual-connect">
+        <input type="text" id="manualIP" placeholder="192.168.1.x:53217" data-i18n-placeholder="manualIP">
+        <button class="btn btn-outline btn-sm" onclick="connectManual()"><span data-i18n="connect">连接</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RECEIVE -->
+  <div class="card" id="recvSection">
+    <h3>&#128229; <span data-i18n="received">接收内容</span></h3>
+    <div id="recvList"></div>
+    <div id="recvEmpty" class="device-empty"><span data-i18n="noContent">暂无接收内容</span></div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="history-toggle" onclick="toggleHistory()">
+    <span id="historyArrow">&#9654;</span>
+    <span data-i18n="history">历史记录</span>
+    <span id="historyCount">(0)</span>
+  </div>
+  <div class="history-content" id="historyContent"></div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <h3><span data-i18n="settings">设置</span></h3>
+    <label><span data-i18n="deviceNameLabel">设备名称</span>
+      <input type="text" id="settingsName" placeholder="MyPC">
+    </label>
+    <div class="actions">
+      <button class="btn btn-outline" onclick="closeSettings()"><span data-i18n="cancel">取消</span></button>
+      <button class="btn btn-primary" onclick="saveSettings()"><span data-i18n="save">保存</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ========== i18n ==========
+const i18n = {
+  zh: {
+    sendFile:'发送文件',sendText:'发送文本',dropHint:'拖拽文件到此处，或点击选择',
+    dropRelease:'松开即发送',maxSize:'最大 500 MB',send:'发送',scanQR:'扫码连接',
+    devices:'局域网设备',received:'接收内容',noContent:'暂无接收内容',
+    history:'历史记录',settings:'设置',deviceNameLabel:'设备名称',
+    cancel:'取消',save:'保存',connect:'连接',download:'下载',copyAll:'复制全部',
+    copied:'已复制 ✓',sent:'已发送 ✓',expand:'展开',collapse:'收起',retry:'重试',
+    resend:'重新发送',uploading:'上传中...',ready:'已就绪',taken:'已被取走',
+    textPlaceholder:'输入要发送的文本...',manualIP:'手动输入 IP:Port',
+    noDevices:'未发现其他设备。可手动输入 IP:Port 连接',
+    fileSent:'文件已发送',textSent:'文本已发送',newFile:'收到新文件',newText:'收到新文本',
+    clipboardPushed:'剪贴板已推送'
+  },
+  en: {
+    sendFile:'Send File',sendText:'Send Text',dropHint:'Drop files here or click to select',
+    dropRelease:'Release to send',maxSize:'Max 500 MB',send:'Send',scanQR:'Scan to Connect',
+    devices:'LAN Devices',received:'Received',noContent:'No content yet',
+    history:'History',settings:'Settings',deviceNameLabel:'Device Name',
+    cancel:'Cancel',save:'Save',connect:'Connect',download:'Download',copyAll:'Copy All',
+    copied:'Copied ✓',sent:'Sent ✓',expand:'Expand',collapse:'Collapse',retry:'Retry',
+    resend:'Resend',uploading:'Uploading...',ready:'Ready',taken:'Downloaded',
+    textPlaceholder:'Enter text to send...',manualIP:'Enter IP:Port manually',
+    noDevices:'No devices found. Enter IP:Port manually to connect',
+    fileSent:'File sent',textSent:'Text sent',newFile:'New file received',newText:'New text received',
+    clipboardPushed:'Clipboard pushed'
+  }
+};
+let lang = (navigator.language||'').startsWith('zh')?'zh':'en';
+function t(key){return (i18n[lang]||i18n.en)[key]||key}
+function applyLang(){
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    el.textContent=t(el.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el=>{
+    el.placeholder=t(el.dataset.i18nPlaceholder);
+  });
+  document.getElementById('langBtn').textContent=lang==='zh'?'EN':'中文';
+  refreshDeviceList();
+}
+function toggleLang(){lang=lang==='zh'?'en':'zh';applyLang()}
+
+// ========== STATE ==========
+let serverInfo = {};
+let devices = [];
+let recvItems = [];
+let historyItems = [];
+let eventSource = null;
+
+// ========== INIT ==========
+async function init(){
+  applyLang();
+  try{
+    const r=await fetch('/info');
+    serverInfo=await r.json();
+    document.getElementById('deviceName').textContent=serverInfo.name;
+    const addr=location.host||serverInfo.addr;
+    document.getElementById('addrDisplay').textContent=addr;
+    document.getElementById('qrAddr').textContent=location.origin;
+    document.getElementById('settingsName').value=serverInfo.name;
+  }catch(e){}
+  connectSSE();
+  fetchDevices();
+  setInterval(fetchDevices,5000);
+}
+
+// ========== SSE ==========
+function connectSSE(){
+  if(eventSource)eventSource.close();
+  eventSource=new EventSource('/events');
+  eventSource.addEventListener('file_ready',e=>{
+    const d=JSON.parse(e.data);
+    addRecvItem(d);
+    if(d.type==='text')showToast(t('newText'));
+    else showToast(t('newFile')+': '+d.name);
+  });
+  eventSource.addEventListener('progress',e=>{
+    const d=JSON.parse(e.data);
+    updateProgress(d);
+  });
+  eventSource.addEventListener('done',e=>{
+    const d=JSON.parse(e.data);
+    markDone(d.token);
+  });
+  eventSource.addEventListener('device_found',e=>{
+    const d=JSON.parse(e.data);
+    addDevice(d);
+  });
+  eventSource.addEventListener('device_lost',e=>{
+    const d=JSON.parse(e.data);
+    removeDevice(d.addr);
+  });
+  eventSource.addEventListener('clipboard',e=>{
+    const d=JSON.parse(e.data);
+    navigator.clipboard.writeText(d.content).then(()=>showToast(t('clipboardPushed')));
+  });
+  eventSource.onerror=()=>{setTimeout(connectSSE,3000)};
+}
+
+// ========== FILE UPLOAD ==========
+function handleDragOver(e){e.preventDefault();e.stopPropagation();document.getElementById('dropZone').classList.add('dragover')}
+function handleDragLeave(e){e.preventDefault();e.stopPropagation();document.getElementById('dropZone').classList.remove('dragover')}
+function handleDrop(e){
+  e.preventDefault();e.stopPropagation();
+  document.getElementById('dropZone').classList.remove('dragover');
+  const files=e.dataTransfer.files;
+  if(files.length>0)handleFileSelect(files);
+}
+async function handleFileSelect(files){
+  if(!files||files.length===0)return;
+  const dz=document.getElementById('dropZone');
+  const prog=document.getElementById('uploadProgress');
+  const result=document.getElementById('sendResult');
+  dz.classList.add('uploading');
+  dz.classList.remove('ready','error');
+  prog.style.display='block';
+  result.style.display='none';
+
+  const fd=new FormData();
+  let total=0;
+  for(const f of files){total+=f.size;fd.append('file',f)}
+
+  if(total>500*1024*1024){
+    dz.classList.remove('uploading');dz.classList.add('error');
+    prog.style.display='none';
+    result.style.display='block';
+    result.innerHTML='<div style="color:var(--error)">文件过大，单次限制 500 MB</div>';
+    return;
+  }
+
+  try{
+    const xhr=new XMLHttpRequest();
+    xhr.upload.onprogress=e=>{
+      if(e.lengthComputable){
+        const pct=Math.round(e.loaded/e.total*100);
+        document.getElementById('uploadFill').style.width=pct+'%';
+        document.getElementById('uploadPercent').textContent=pct+'%';
+      }
+    };
+    const resp=await new Promise((resolve,reject)=>{
+      xhr.onload=()=>resolve(JSON.parse(xhr.responseText));
+      xhr.onerror=()=>reject(new Error('upload failed'));
+      xhr.open('POST','/send/file');
+      xhr.send(fd);
+    });
+
+    dz.classList.remove('uploading');dz.classList.add('ready');
+    prog.style.display='none';
+    const url=location.origin+'/recv/'+resp.token;
+    result.style.display='block';
+    result.innerHTML=`<div class="send-result">
+      <div>✓ ${files.length>1?files.length+' files':files[0].name} (${formatSize(resp.size)})</div>
+      <div class="url">${url}</div>
+      <div class="actions">
+        <button class="btn btn-sm btn-primary" onclick="copyText('${url}',this)">${t('copyAll')}</button>
+        <button class="btn btn-sm btn-outline" onclick="resetDropZone()">${t('resend')}</button>
+      </div>
+    </div>`;
+    showToast(t('fileSent'));
+  }catch(e){
+    dz.classList.remove('uploading');dz.classList.add('error');
+    prog.style.display='none';
+    result.style.display='block';
+    result.innerHTML=`<div style="color:var(--error)">${e.message} <button class="btn btn-sm btn-error" onclick="resetDropZone()">${t('retry')}</button></div>`;
+  }
+}
+
+function resetDropZone(){
+  const dz=document.getElementById('dropZone');
+  dz.classList.remove('uploading','ready','error');
+  document.getElementById('uploadProgress').style.display='none';
+  document.getElementById('sendResult').style.display='none';
+  document.getElementById('uploadFill').style.width='0%';
+  document.getElementById('fileInput').value='';
+}
+
+// ========== TEXT SEND ==========
+const textInput=document.getElementById('textInput');
+const charCount=document.getElementById('charCount');
+const sendTextBtn=document.getElementById('sendTextBtn');
+textInput.addEventListener('input',()=>{
+  const len=new Blob([textInput.value]).size;
+  charCount.textContent=formatSize(len);
+  charCount.classList.toggle('warn',len>900*1024);
+  sendTextBtn.disabled=!textInput.value.trim()||len>1024*1024;
+});
+async function sendText(){
+  const content=textInput.value;
+  if(!content.trim())return;
+  sendTextBtn.disabled=true;
+  try{
+    const r=await fetch('/send/text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error);
+    const url=location.origin+'/recv/'+d.token;
+    const res=document.getElementById('textResult');
+    res.style.display='block';
+    res.innerHTML=`<div class="send-result">
+      <div>✓ ${t('sent')} (${formatSize(d.length)})</div>
+      <div class="url">${url}</div>
+      <div class="actions">
+        <button class="btn btn-sm btn-primary" onclick="copyText('${url}',this)">${t('copyAll')}</button>
+      </div>
+    </div>`;
+    showToast(t('textSent'));
+  }catch(e){showToast(e.message)}
+  finally{sendTextBtn.disabled=!textInput.value.trim()}
+}
+
+// ========== DEVICES ==========
+async function fetchDevices(){
+  try{
+    const r=await fetch('/devices');
+    const d=await r.json();
+    devices=d.devices||[];
+    refreshDeviceList();
+  }catch(e){}
+}
+function addDevice(d){
+  const idx=devices.findIndex(x=>x.addr===d.addr);
+  if(idx>=0)devices[idx]={...devices[idx],...d,last_seen:Date.now()/1000};
+  else devices.push({...d,last_seen:Date.now()/1000});
+  refreshDeviceList();
+}
+function removeDevice(addr){
+  devices=devices.filter(d=>d.addr!==addr);
+  refreshDeviceList();
+}
+function refreshDeviceList(){
+  const el=document.getElementById('deviceList');
+  if(devices.length===0){
+    el.innerHTML=`<div class="device-empty">${t('noDevices')}</div>`;
+    return;
+  }
+  el.innerHTML=devices.map(d=>{
+    const osIcon=d.os==='darwin'?'&#127823;':d.os==='windows'?'&#128187;':'&#128039;';
+    const online=(Date.now()/1000-d.last_seen)<30;
+    return `<div class="device-card" onclick="window.open('http://${d.addr}','_blank')">
+      <div class="device-dot ${online?'':'offline'}"></div>
+      <span class="device-os">${osIcon}</span>
+      <div><div class="device-name">${esc(d.name||d.addr)}</div><div class="device-addr">${d.addr}</div></div>
+    </div>`;
+  }).join('');
+}
+function connectManual(){
+  const ip=document.getElementById('manualIP').value.trim();
+  if(ip)window.open('http://'+ip,'_blank');
+}
+
+// ========== RECEIVE ==========
+function addRecvItem(item){
+  recvItems.unshift(item);
+  document.getElementById('recvEmpty').style.display='none';
+  renderRecvList();
+}
+function renderRecvList(){
+  const el=document.getElementById('recvList');
+  el.innerHTML=recvItems.map(item=>{
+    if(item.type==='text'){
+      const preview=(item.name||'').substring(0,200);
+      return `<div class="recv-item" id="recv-${item.token}">
+        <div class="recv-icon">&#128196;</div>
+        <div class="recv-info">
+          <div class="recv-name">${t('newText')}</div>
+          <div class="recv-size">${formatSize(item.size)}</div>
+          <div class="recv-text-preview" id="preview-${item.token}"></div>
+          <div class="recv-text-full" id="full-${item.token}"></div>
+        </div>
+        <div>
+          <button class="btn btn-sm btn-primary" onclick="copyRecvText('${item.token}',this)">${t('copyAll')}</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleTextFull('${item.token}')">${t('expand')}</button>
+        </div>
+      </div>`;
+    }
+    return `<div class="recv-item" id="recv-${item.token}">
+      <div class="recv-icon">&#128196;</div>
+      <div class="recv-info">
+        <div class="recv-name">${esc(item.name)}</div>
+        <div class="recv-size">${formatSize(item.size)}</div>
+        <div class="progress-bar" id="pbar-${item.token}" style="display:none"><div class="progress-fill" id="pfill-${item.token}"></div></div>
+      </div>
+      <a class="btn btn-sm btn-primary" href="/recv/${item.token}" download="${esc(item.name)}">${t('download')}</a>
+    </div>`;
+  }).join('');
+  // Load text content
+  recvItems.filter(i=>i.type==='text').forEach(loadTextContent);
+}
+async function loadTextContent(item){
+  try{
+    const r=await fetch('/recv/'+item.token);
+    const d=await r.json();
+    const pre=document.getElementById('preview-'+item.token);
+    const full=document.getElementById('full-'+item.token);
+    if(pre)pre.textContent=d.content.substring(0,200);
+    if(full)full.textContent=d.content;
+  }catch(e){}
+}
+async function copyRecvText(token,btn){
+  try{
+    const r=await fetch('/recv/'+token);
+    const d=await r.json();
+    await navigator.clipboard.writeText(d.content);
+    const orig=btn.textContent;
+    btn.textContent=t('copied');
+    btn.classList.add('btn-success');
+    setTimeout(()=>{btn.textContent=orig;btn.classList.remove('btn-success')},2000);
+  }catch(e){showToast('Copy failed')}
+}
+function toggleTextFull(token){
+  const el=document.getElementById('full-'+token);
+  el.classList.toggle('show');
+}
+function updateProgress(d){
+  const bar=document.getElementById('pbar-'+d.token);
+  const fill=document.getElementById('pfill-'+d.token);
+  if(bar&&fill){
+    bar.style.display='block';
+    const pct=d.total>0?Math.round(d.bytes/d.total*100):0;
+    fill.style.width=pct+'%';
+  }
+}
+function markDone(token){
+  // Add to history
+  const item=recvItems.find(i=>i.token===token);
+  if(item){
+    historyItems.unshift(item);
+    if(historyItems.length>20)historyItems=historyItems.slice(0,20);
+    document.getElementById('historyCount').textContent='('+historyItems.length+')';
+  }
+}
+
+// ========== HISTORY ==========
+function toggleHistory(){
+  const el=document.getElementById('historyContent');
+  const arrow=document.getElementById('historyArrow');
+  if(el.classList.contains('show')){
+    el.classList.remove('show');arrow.innerHTML='&#9654;';
+  }else{
+    el.classList.add('show');arrow.innerHTML='&#9660;';
+    renderHistory();
+  }
+}
+function renderHistory(){
+  const el=document.getElementById('historyContent');
+  if(historyItems.length===0){el.innerHTML=`<div class="device-empty">${t('noContent')}</div>`;return}
+  el.innerHTML=historyItems.map(item=>`<div class="recv-item">
+    <div class="recv-icon">${item.type==='text'?'&#128196;':'&#128196;'}</div>
+    <div class="recv-info">
+      <div class="recv-name">${esc(item.name||t('newText'))}</div>
+      <div class="recv-size">${formatSize(item.size)}</div>
+    </div>
+  </div>`).join('');
+}
+
+// ========== SETTINGS ==========
+function openSettings(){document.getElementById('settingsModal').classList.add('show')}
+function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
+function saveSettings(){closeSettings();showToast(t('save'))}
+
+// ========== TOAST ==========
+function showToast(msg){
+  const c=document.getElementById('toastContainer');
+  const el=document.createElement('div');
+  el.className='toast';el.textContent=msg;
+  c.appendChild(el);
+  setTimeout(()=>{el.style.animation='fadeOut .3s ease forwards';setTimeout(()=>el.remove(),300)},3000);
+}
+
+// ========== UTILS ==========
+function formatSize(b){
+  if(b>=1073741824)return (b/1073741824).toFixed(1)+' GB';
+  if(b>=1048576)return (b/1048576).toFixed(1)+' MB';
+  if(b>=1024)return (b/1024).toFixed(1)+' KB';
+  return b+' B';
+}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+async function copyText(text,btn){
+  try{await navigator.clipboard.writeText(text);
+    const o=btn.textContent;btn.textContent=t('copied');btn.classList.add('btn-success');
+    setTimeout(()=>{btn.textContent=o;btn.classList.remove('btn-success')},2000);
+  }catch(e){}
+}
+
+// Click outside modal to close
+document.getElementById('settingsModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeSettings()});
+
+init();
+</script>
+</body>
+</html>
