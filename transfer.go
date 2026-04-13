@@ -40,6 +40,14 @@ type TransferStore struct {
 	tempDir string
 }
 
+type DownloadOutcome int
+
+const (
+	DownloadReleased DownloadOutcome = iota
+	DownloadFailed
+	DownloadCompleted
+)
+
 func NewTransferStore() *TransferStore {
 	tmpDir, err := os.MkdirTemp("", "landrop-*")
 	if err != nil {
@@ -264,7 +272,7 @@ func (s *TransferStore) BeginDownload(token string) (*TransferItem, bool, bool) 
 	return &cp, true, false
 }
 
-func (s *TransferStore) FinishDownload(token string, success bool) {
+func (s *TransferStore) FinishDownload(token string, outcome DownloadOutcome, peer string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if item, ok := s.items[token]; ok {
@@ -272,22 +280,33 @@ func (s *TransferStore) FinishDownload(token string, success bool) {
 			if !item.Claimed {
 				return
 			}
-			if success {
+			switch outcome {
+			case DownloadCompleted:
 				item.Downloaded = true
 				item.Claimed = false
-				s.addToHistory(item)
+				s.addToHistory(item, peer, true)
 				if item.FilePath != "" {
 					_ = os.Remove(item.FilePath)
 				}
 				delete(s.items, token)
 				return
+			case DownloadFailed:
+				s.addToHistory(item, peer, false)
+				item.Claimed = false
+			case DownloadReleased:
+				item.Claimed = false
 			}
-			item.Claimed = false
 			return
 		}
-		if success && !item.Downloaded {
+		switch outcome {
+		case DownloadCompleted:
+			if item.Downloaded {
+				return
+			}
 			item.Downloaded = true
-			s.addToHistory(item)
+			s.addToHistory(item, peer, true)
+		case DownloadFailed:
+			s.addToHistory(item, peer, false)
 		}
 	}
 }
@@ -311,11 +330,25 @@ func copyFile(srcPath string, dstPath string) error {
 	return dst.Close()
 }
 
-func (s *TransferStore) addToHistory(item *TransferItem) {
+func (s *TransferStore) addToHistory(item *TransferItem, peer string, success bool) {
 	s.history = append(s.history, item)
 	if len(s.history) > 20 {
 		s.history = s.history[len(s.history)-20:]
 	}
+
+	status := "success"
+	if !success {
+		status = "failed"
+	}
+
+	AppendHistory(&HistoryRecord{
+		Direction: "send",
+		Name:      item.Name,
+		Size:      item.Size,
+		Type:      item.Type,
+		Status:    status,
+		Peer:      peer,
+	})
 }
 
 func (s *TransferStore) GetHistory() []*TransferItem {

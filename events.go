@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 )
 
 type SSEBroker struct {
@@ -13,9 +14,16 @@ type SSEBroker struct {
 }
 
 func NewSSEBroker() *SSEBroker {
-	return &SSEBroker{
+	b := &SSEBroker{
 		clients: make(map[chan string]bool),
 	}
+	go func() {
+		for {
+			time.Sleep(15 * time.Second)
+			b.Broadcast("ping", map[string]interface{}{})
+		}
+	}()
+	return b
 }
 
 func (b *SSEBroker) Subscribe() chan string {

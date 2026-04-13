@@ -19,13 +19,13 @@ func TestTransferStoreOneTimeClaimsAreExclusive(t *testing.T) {
 		t.Fatalf("second BeginDownload() = found %v unavailable %v, want found=true unavailable=true", found, unavailable)
 	}
 
-	store.FinishDownload(item.Token, false)
+	store.FinishDownload(item.Token, DownloadFailed, "test_peer")
 
 	if _, found, unavailable := store.BeginDownload(item.Token); !found || unavailable {
 		t.Fatalf("BeginDownload() after failed transfer = found %v unavailable %v, want found=true unavailable=false", found, unavailable)
 	}
 
-	store.FinishDownload(item.Token, true)
+	store.FinishDownload(item.Token, DownloadCompleted, "test_peer")
 
 	if _, ok := store.Get(item.Token); ok {
 		t.Fatal("expected one-time token to be removed after a successful transfer")

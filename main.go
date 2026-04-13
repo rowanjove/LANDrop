@@ -23,6 +23,8 @@ func main() {
 		os.Args = append(os.Args, "serve")
 	}
 
+	LoadHistory()
+
 	// Global flags
 	port := flag.Int("port", 53217, "服务端口")
 	pin := flag.String("pin", "", "设置 4 位 PIN 保护")
@@ -57,19 +59,64 @@ func main() {
 
 	case "recv":
 		recvCmd := flag.NewFlagSet("recv", flag.ExitOnError)
-		rPin := recvCmd.String("pin", "", "璁剧疆 4 浣?PIN 淇濇姢")
-		rTLS := recvCmd.Bool("tls", false, "鍚敤 HTTPS")
+		rPin := recvCmd.String("pin", "", "设置 4 位 PIN 保护")
+		rTLS := recvCmd.Bool("tls", false, "启用 HTTPS")
+		rCont := recvCmd.Bool("c", false, "断点续传 (短选项)")
+		recvCmd.BoolVar(rCont, "continue", false, "断点续传")
+		rTarget := recvCmd.String("target", "", "直接连接指定设备(如 192.168.1.10:53217) 跳过扫描")
 		recvCmd.Parse(os.Args[2:])
 		saveDir := "."
 		if recvCmd.NArg() > 0 {
 			saveDir = recvCmd.Arg(0)
 		}
-		recvMode(saveDir, *rPin, *rTLS)
+		recvMode(saveDir, *rPin, *rTLS, *rCont, *rTarget)
 
 	case "devices":
 		devCmd := flag.NewFlagSet("devices", flag.ExitOnError)
 		devCmd.Parse(os.Args[2:])
 		listDevices()
+
+	case "history":
+		historyCmd := flag.NewFlagSet("history", flag.ExitOnError)
+		limit := historyCmd.Int("limit", 50, "显示最近的条数")
+		clear := historyCmd.Bool("clear", false, "清除传输历史记录")
+		historyCmd.Parse(os.Args[2:])
+		if *clear {
+			ClearHistory()
+			fmt.Println("传输历史已清除")
+			return
+		}
+
+		records := GetHistoryRecords()
+		if len(records) == 0 {
+			fmt.Println("暂无传输历史记录")
+			return
+		}
+
+		showLimit := *limit
+		if showLimit > len(records) {
+			showLimit = len(records)
+		}
+
+		fmt.Printf("最近 %d 条传输历史:\n\n", showLimit)
+		count := 0
+		for i := len(records) - 1; i >= 0; i-- {
+			r := records[i]
+			t := time.Unix(r.Timestamp, 0).Format("2006-01-02 15:04:05")
+			statusIcon := "✅"
+			if r.Status != "success" {
+				statusIcon = "❌"
+			}
+			dirIcon := "<-"
+			if r.Direction == "send" {
+				dirIcon = "->"
+			}
+			fmt.Printf("%s [%s] %s %s | %s (%s) | Peer: %s | Status: %s\n", statusIcon, t, dirIcon, r.Type, r.Name, formatSize(r.Size), r.Peer, r.Status)
+			count++
+			if count >= showLimit {
+				break
+			}
+		}
 
 	case "version":
 		fmt.Printf("LAN Drop v%s\n", version)
@@ -99,6 +146,7 @@ func printUsage() {
   landrop send --text '内容'      发送文本
   landrop recv [save-dir]         接收模式，自动保存到指定目录
   landrop devices                 列出局域网内设备
+  landrop history [--limit N] [--clear] 查看传输历史
   landrop version                 显示版本
 
 选项:
@@ -249,13 +297,19 @@ func listDevices() {
 	}
 }
 
-func recvMode(saveDir string, pin string, useTLS bool) {
+func recvMode(saveDir string, pin string, useTLS bool, cont bool, target string) {
 	// Ensure save directory exists
 	if err := os.MkdirAll(saveDir, 0755); err != nil {
 		log.Fatalf("无法创建保存目录: %v", err)
 	}
 	absDir, _ := filepath.Abs(saveDir)
 	fmt.Printf("接收模式已启动，文件将保存到: %s\n", absDir)
+
+	if target != "" {
+		pollAndSave(target, absDir, pin, useTLS, cont)
+		return
+	}
+
 	fmt.Println("正在扫描局域网内的 LAN Drop 设备...")
 
 	broker := NewSSEBroker()
@@ -273,7 +327,7 @@ func recvMode(saveDir string, pin string, useTLS bool) {
 		var addr string
 		fmt.Scanln(&addr)
 		if addr != "" {
-			pollAndSave(addr, absDir, pin, useTLS)
+			pollAndSave(addr, absDir, pin, useTLS, cont)
 		}
 		return
 	}
@@ -290,10 +344,10 @@ func recvMode(saveDir string, pin string, useTLS bool) {
 		return
 	}
 
-	pollAndSave(devices[choice-1].Addr, absDir, pin, useTLS)
+	pollAndSave(devices[choice-1].Addr, absDir, pin, useTLS, cont)
 }
 
-func pollAndSave(addr string, saveDir string, pin string, useTLS bool) {
+func pollAndSave(addr string, saveDir string, pin string, useTLS bool, cont bool) {
 	fmt.Printf("连接到 %s，等待文件...\n", addr)
 	scheme := "http"
 	if useTLS {
@@ -352,12 +406,55 @@ func pollAndSave(addr string, saveDir string, pin string, useTLS bool) {
 						if err != nil {
 							fmt.Printf("获取文本失败: %v\n", err)
 						} else {
+							if textResp.StatusCode != http.StatusOK {
+								var apiErr struct {
+									Error string `json:"error"`
+								}
+								_ = json.NewDecoder(textResp.Body).Decode(&apiErr)
+								textResp.Body.Close()
+								msg := apiErr.Error
+								if msg == "" {
+									msg = fmt.Sprintf("HTTP %d", textResp.StatusCode)
+								}
+								fmt.Printf("获取文本失败: %s\n", msg)
+								AppendHistory(&HistoryRecord{
+									Direction: "recv",
+									Name:      event.Name,
+									Size:      event.Size,
+									Type:      "text",
+									Status:    "failed",
+									Peer:      addr,
+								})
+								continue
+							}
+
 							var textData struct {
 								Content string `json:"content"`
 							}
-							json.NewDecoder(textResp.Body).Decode(&textData)
+							if err := json.NewDecoder(textResp.Body).Decode(&textData); err != nil {
+								textResp.Body.Close()
+								fmt.Printf("解析文本响应失败: %v\n", err)
+								AppendHistory(&HistoryRecord{
+									Direction: "recv",
+									Name:      event.Name,
+									Size:      event.Size,
+									Type:      "text",
+									Status:    "failed",
+									Peer:      addr,
+								})
+								continue
+							}
 							textResp.Body.Close()
 							fmt.Printf("\n收到文本 (%s):\n%s\n", formatSize(event.Size), textData.Content)
+
+							AppendHistory(&HistoryRecord{
+								Direction: "recv",
+								Name:      event.Name,
+								Size:      event.Size,
+								Type:      "text",
+								Status:    "success",
+								Peer:      addr,
+							})
 						}
 					} else {
 						fmt.Printf("\n收到文件: %s (%s)\n", event.Name, formatSize(event.Size))
@@ -366,11 +463,60 @@ func pollAndSave(addr string, saveDir string, pin string, useTLS bool) {
 						if pin != "" {
 							dlReq.Header.Set("X-LanDrop-PIN", pin)
 						}
-						savePath, err = downloadFileWithClient(client, dlReq, savePath)
+
+						var startByte int64
+						if cont {
+							if info, err := os.Stat(savePath); err == nil {
+								if info.Size() > event.Size {
+									fmt.Printf("续传失败: 本地文件大于远端文件，请先处理现有文件 %s\n", savePath)
+									AppendHistory(&HistoryRecord{
+										Direction: "recv",
+										Name:      event.Name,
+										Size:      event.Size,
+										Type:      "file",
+										Status:    "failed",
+										Peer:      addr,
+									})
+									continue
+								}
+								if info.Size() == event.Size {
+									fmt.Printf("文件已完整存在，跳过下载: %s\n", savePath)
+									AppendHistory(&HistoryRecord{
+										Direction: "recv",
+										Name:      event.Name,
+										Size:      event.Size,
+										Type:      "file",
+										Status:    "success",
+										Peer:      addr,
+									})
+									continue
+								}
+								startByte = info.Size()
+								dlReq.Header.Set("Range", fmt.Sprintf("bytes=%d-", startByte))
+							}
+						}
+
+						savePath, err = downloadFileWithClient(client, dlReq, savePath, startByte)
 						if err != nil {
 							fmt.Printf("下载失败: %v\n", err)
+							AppendHistory(&HistoryRecord{
+								Direction: "recv",
+								Name:      event.Name,
+								Size:      event.Size,
+								Type:      "file",
+								Status:    "failed",
+								Peer:      addr,
+							})
 						} else {
 							fmt.Printf("已保存到: %s\n", savePath)
+							AppendHistory(&HistoryRecord{
+								Direction: "recv",
+								Name:      event.Name,
+								Size:      event.Size,
+								Type:      "file",
+								Status:    "success",
+								Peer:      addr,
+							})
 						}
 					}
 				}
@@ -403,37 +549,69 @@ func downloadFile(url string, savePath string) error {
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	_, err = saveDownload(resp.Body, savePath)
+	_, err = saveDownload(resp.Body, savePath, false)
 	return err
 }
 
-func downloadFileWithClient(client *http.Client, req *http.Request, savePath string) (string, error) {
+func downloadFileWithClient(client *http.Client, req *http.Request, savePath string, resumeOffset int64) (string, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+
+	if resumeOffset > 0 {
+		if resp.StatusCode != http.StatusPartialContent {
+			return "", fmt.Errorf("server did not honor resume request: HTTP %d", resp.StatusCode)
+		}
+		start, _, ok := parseContentRange(resp.Header.Get("Content-Range"))
+		if !ok {
+			return "", fmt.Errorf("server returned invalid Content-Range")
+		}
+		if start != resumeOffset {
+			return "", fmt.Errorf("resume offset mismatch: got %d want %d", start, resumeOffset)
+		}
+	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	return saveDownload(resp.Body, savePath)
+	return saveDownload(resp.Body, savePath, resumeOffset > 0)
 }
 
-func saveDownload(src io.Reader, savePath string) (string, error) {
-	finalPath, err := reserveDownloadPath(savePath)
-	if err != nil {
-		return "", err
+func saveDownload(src io.Reader, savePath string, isResume bool) (string, error) {
+	finalPath := savePath
+	if !isResume {
+		var err error
+		finalPath, err = reserveDownloadPath(savePath)
+		if err != nil {
+			return "", err
+		}
 	}
 
-	tempFile, err := os.CreateTemp(filepath.Dir(finalPath), filepath.Base(finalPath)+".part-*")
-	if err != nil {
-		return "", err
+	var tempFile *os.File
+	var err error
+	var tempPath string
+
+	if isResume {
+		// Append to the existing file
+		tempFile, err = os.OpenFile(finalPath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return "", err
+		}
+		tempPath = finalPath
+	} else {
+		tempFile, err = os.CreateTemp(filepath.Dir(finalPath), filepath.Base(finalPath)+".part-*")
+		if err != nil {
+			return "", err
+		}
+		tempPath = tempFile.Name()
 	}
-	tempPath := tempFile.Name()
+
 	defer func() {
 		_ = tempFile.Close()
-		_ = os.Remove(tempPath)
+		if !isResume {
+			_ = os.Remove(tempPath)
+		}
 	}()
 
 	if _, err := io.Copy(tempFile, src); err != nil {
@@ -442,8 +620,11 @@ func saveDownload(src io.Reader, savePath string) (string, error) {
 	if err := tempFile.Close(); err != nil {
 		return "", err
 	}
-	if err := os.Rename(tempPath, finalPath); err != nil {
-		return "", err
+
+	if !isResume {
+		if err := os.Rename(tempPath, finalPath); err != nil {
+			return "", err
+		}
 	}
 	return finalPath, nil
 }

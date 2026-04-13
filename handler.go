@@ -70,6 +70,12 @@ func (a *App) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /devices", a.handleDevices)
 	mux.HandleFunc("GET /events", a.handleEvents)
 	mux.HandleFunc("POST /clipboard/push", a.clipboard.HandlePush)
+	mux.HandleFunc("GET /clipboard", a.clipboard.HandleGet)
+	mux.HandleFunc("GET /history", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"history": GetHistoryRecords(),
+		})
+	})
 }
 
 func isMobile(ua string) bool {
@@ -171,9 +177,11 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 
 		item.OneTimeUse = a.oneTimeUse
 		a.broker.Broadcast("file_ready", map[string]interface{}{
-			"token": item.Token,
-			"name":  item.Name,
-			"size":  item.Size,
+			"token":  item.Token,
+			"name":   item.Name,
+			"size":   item.Size,
+			"type":   "file",
+			"sender": r.Header.Get("X-Client-ID"),
 		})
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -281,9 +289,11 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 	item.OneTimeUse = a.oneTimeUse
 
 	a.broker.Broadcast("file_ready", map[string]interface{}{
-		"token": item.Token,
-		"name":  item.Name,
-		"size":  item.Size,
+		"token":  item.Token,
+		"name":   item.Name,
+		"size":   item.Size,
+		"type":   "file",
+		"sender": r.Header.Get("X-Client-ID"),
 	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -326,10 +336,11 @@ func (a *App) handleSendText(w http.ResponseWriter, r *http.Request) {
 	item.OneTimeUse = a.oneTimeUse
 
 	a.broker.Broadcast("file_ready", map[string]interface{}{
-		"token": item.Token,
-		"name":  "",
-		"size":  item.Size,
-		"type":  "text",
+		"token":  item.Token,
+		"name":   "",
+		"size":   item.Size,
+		"type":   "text",
+		"sender": r.Header.Get("X-Client-ID"),
 	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -370,6 +381,28 @@ func (a *App) handleRecv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Method == http.MethodHead {
+		item, ok := a.store.Get(token)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{
+				"error": "token not found",
+				"code":  "TOKEN_NOT_FOUND",
+			})
+			return
+		}
+		if item.Type == "text" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if _, err := a.serveFile(w, r, item); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"error": "file read error",
+			})
+		}
+		return
+	}
+
 	item, found, unavailable := a.store.BeginDownload(token)
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{
@@ -387,10 +420,10 @@ func (a *App) handleRecv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	success := false
+	outcome := DownloadFailed
 	defer func() {
-		a.store.FinishDownload(token, success)
-		if success {
+		a.store.FinishDownload(token, outcome, r.RemoteAddr)
+		if outcome == DownloadCompleted {
 			a.broker.Broadcast("done", map[string]string{"token": token})
 		}
 	}()
@@ -402,65 +435,142 @@ func (a *App) handleRecv(w http.ResponseWriter, r *http.Request) {
 			"content": string(item.Content),
 			"type":    "text",
 		})
-		success = err == nil
+		if err == nil {
+			outcome = DownloadCompleted
+		}
 		return
 	}
 
-	// File download
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, item.Name))
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", item.Size))
+	fileOutcome, err := a.serveFile(w, r, item)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "file read error",
+		})
+		return
+	}
+	outcome = fileOutcome
+}
 
-	var writeErr error
+type trackingResponseWriter struct {
+	http.ResponseWriter
+	status       int
+	bytesWritten int64
+	writeErr     error
+}
+
+func (w *trackingResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *trackingResponseWriter) Write(p []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	n, err := w.ResponseWriter.Write(p)
+	w.bytesWritten += int64(n)
+	if err != nil {
+		w.writeErr = err
+	}
+	return n, err
+}
+
+func (w *trackingResponseWriter) Flush() {
+	flusher, ok := w.ResponseWriter.(http.Flusher)
+	if ok {
+		flusher.Flush()
+	}
+}
+
+func (w *trackingResponseWriter) StatusCode() int {
+	if w.status == 0 {
+		return http.StatusOK
+	}
+	return w.status
+}
+
+func (a *App) serveFile(w http.ResponseWriter, r *http.Request, item *TransferItem) (DownloadOutcome, error) {
+	var (
+		reader  io.ReadSeeker
+		modTime = time.Unix(item.CreatedAt, 0)
+		closeFn func() error
+	)
+
 	if item.Content != nil {
-		reader := bytes.NewReader(item.Content)
-		written := int64(0)
-		buf := make([]byte, 32*1024)
-		startTime := time.Now()
-		lastReport := time.Now()
-
-		for {
-			n, readErr := reader.Read(buf)
-			if n > 0 {
-				if _, writeErr = w.Write(buf[:n]); writeErr != nil {
-					break
-				}
-				written += int64(n)
-				if time.Since(lastReport) > 200*time.Millisecond {
-					elapsed := time.Since(startTime).Seconds()
-					speed := float64(0)
-					if elapsed > 0 {
-						speed = float64(written) / elapsed
-					}
-					a.broker.Broadcast("progress", map[string]interface{}{
-						"token": token,
-						"bytes": written,
-						"total": item.Size,
-						"speed": speed,
-					})
-					lastReport = time.Now()
-				}
-			}
-			if readErr != nil {
-				break
-			}
-		}
+		reader = bytes.NewReader(item.Content)
 	} else if item.FilePath != "" {
 		f, err := os.Open(item.FilePath)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-				"error": "file read error",
-			})
-			return
+			return DownloadFailed, err
 		}
-		defer f.Close()
-		_, writeErr = io.Copy(w, f)
+		info, err := f.Stat()
+		if err != nil {
+			_ = f.Close()
+			return DownloadFailed, err
+		}
+		reader = f
+		modTime = info.ModTime()
+		closeFn = f.Close
+	} else {
+		return DownloadFailed, fmt.Errorf("empty file source")
 	}
 
-	// Only mark downloaded if the transfer completed without write errors
-	if writeErr == nil {
-		success = true
+	if closeFn != nil {
+		defer closeFn()
 	}
+
+	tw := &trackingResponseWriter{ResponseWriter: w}
+	tw.Header().Set("Content-Type", "application/octet-stream")
+	tw.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, item.Name))
+	http.ServeContent(tw, r, item.Name, modTime, reader)
+	return classifyDownloadOutcome(item.Size, tw), nil
+}
+
+func classifyDownloadOutcome(totalSize int64, w *trackingResponseWriter) DownloadOutcome {
+	if w.writeErr != nil {
+		return DownloadFailed
+	}
+
+	switch status := w.StatusCode(); status {
+	case http.StatusOK:
+		if totalSize == 0 || w.bytesWritten == totalSize {
+			return DownloadCompleted
+		}
+		return DownloadFailed
+	case http.StatusPartialContent:
+		start, end, ok := parseContentRange(w.Header().Get("Content-Range"))
+		if !ok {
+			return DownloadFailed
+		}
+		if start >= 0 && end == totalSize-1 {
+			return DownloadCompleted
+		}
+		return DownloadReleased
+	case http.StatusNotModified, http.StatusRequestedRangeNotSatisfiable:
+		return DownloadReleased
+	default:
+		if status >= 400 {
+			return DownloadFailed
+		}
+	}
+	return DownloadReleased
+}
+
+func parseContentRange(header string) (int64, int64, bool) {
+	if header == "" {
+		return 0, 0, false
+	}
+
+	var (
+		unit       string
+		start, end int64
+		total      int64
+	)
+	n, err := fmt.Sscanf(header, "%s %d-%d/%d", &unit, &start, &end, &total)
+	if err != nil || n != 4 || unit != "bytes" {
+		return 0, 0, false
+	}
+	return start, end, true
 }
 
 func (a *App) handleDevices(w http.ResponseWriter, r *http.Request) {

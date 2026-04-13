@@ -144,6 +144,7 @@ input[type="file"]{display:none}
   <span class="spacer"></span>
   <button class="lang-switch" id="langBtn" onclick="toggleLang()">EN</button>
   <button class="settings-btn" onclick="openSettings()" title="Settings">&#9881;</button>
+  <button class="settings-btn" onclick="pullClipboard()" title="Pull Clipboard">&#128203;</button>
 </nav>
 
 <div class="container">
@@ -251,7 +252,7 @@ const i18n = {
     textPlaceholder:'输入要发送的文本...',manualIP:'手动输入 IP:Port',
     noDevices:'未发现其他设备。可手动输入 IP:Port 连接',
     fileSent:'文件已发送',textSent:'文本已发送',newFile:'收到新文件',newText:'收到新文本',
-    clipboardPushed:'剪贴板已推送'
+    clipboardPushed:'剪贴板已推送', pullClipboardFailed:'拉取剪贴板失败'
   },
   en: {
     sendFile:'Send File',sendText:'Send Text',dropHint:'Drop files here or click to select',
@@ -264,7 +265,7 @@ const i18n = {
     textPlaceholder:'Enter text to send...',manualIP:'Enter IP:Port manually',
     noDevices:'No devices found. Enter IP:Port manually to connect',
     fileSent:'File sent',textSent:'Text sent',newFile:'New file received',newText:'New text received',
-    clipboardPushed:'Clipboard pushed'
+    clipboardPushed:'Clipboard pushed', pullClipboardFailed:'Clipboard pull failed'
   }
 };
 let lang = (navigator.language||'').startsWith('zh')?'zh':'en';
@@ -279,6 +280,7 @@ function applyLang(){
 function toggleLang(){lang=lang==='zh'?'en':'zh';applyLang()}
 
 // ========== STATE ==========
+const myClientId = Math.random().toString(36).substring(2);
 let serverInfo={};let devices=[];let recvItems=[];let historyItems=[];let sentTextCache={};let eventSource=null;
 function buildDeviceURL(addr){return /^https?:\/\//i.test(addr)?addr:location.protocol+'//'+addr}
 function getSavedDeviceName(){try{return(localStorage.getItem('landrop.deviceName')||'').trim()}catch(e){return''}}
@@ -320,19 +322,36 @@ async function init(){
     document.getElementById('qrAddr').textContent=location.origin;
   }catch(e){}
   applyDeviceName();
+  fetchHistory();
   connectSSE();fetchDevices();setInterval(fetchDevices,5000);
 }
+
+// ========== CLIPBOARD ==========
+async function pullClipboard() {
+  try {
+    const r = await fetch('/clipboard');
+    if (!r.ok) throw new Error('Failed');
+    const d = await r.json();
+    if (d.content) {
+      await copyTextToClipboard(d.content);
+      showToast(t('clipboardPushed'));
+    }
+  } catch(e) {
+    showToast(t('pullClipboardFailed')||e.message);
+  }
+}
+
 
 // ========== SSE ==========
 function connectSSE(){
   if(eventSource)eventSource.close();
   eventSource=new EventSource('/events');
-  eventSource.addEventListener('file_ready',e=>{const d=JSON.parse(e.data);addRecvItem(d);if(d.type==='text')showToast(t('newText'));else showToast(t('newFile')+': '+d.name)});
+  eventSource.addEventListener('file_ready',e=>{const d=JSON.parse(e.data);if(d.sender===myClientId)return;addRecvItem(d);if(d.type==='text')showToast(t('newText'));else showToast(t('newFile')+': '+d.name)});
   eventSource.addEventListener('progress',e=>{updateProgress(JSON.parse(e.data))});
   eventSource.addEventListener('done',e=>{markDone(JSON.parse(e.data).token)});
   eventSource.addEventListener('device_found',e=>{addDevice(JSON.parse(e.data))});
   eventSource.addEventListener('device_lost',e=>{removeDevice(JSON.parse(e.data).addr)});
-  eventSource.addEventListener('clipboard',e=>{const d=JSON.parse(e.data);navigator.clipboard.writeText(d.content).then(()=>showToast(t('clipboardPushed')))});
+  eventSource.addEventListener('clipboard',e=>{const d=JSON.parse(e.data);copyTextToClipboard(d.content).then(()=>showToast(t('clipboardPushed'))).catch(()=>showToast(t('pullClipboardFailed')))});
   eventSource.onerror=()=>{setTimeout(connectSSE,3000)};
 }
 
@@ -352,7 +371,7 @@ async function handleFileSelect(files){
     xhr.upload.onprogress=e=>{if(e.lengthComputable){const pct=Math.round(e.loaded/e.total*100);document.getElementById('uploadFill').style.width=pct+'%';document.getElementById('uploadPercent').textContent=pct+'%'}};
     const resp=await new Promise((resolve,reject)=>{
       xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300){try{resolve(JSON.parse(xhr.responseText))}catch(e){reject(new Error('invalid response'))}}else{try{const d=JSON.parse(xhr.responseText);reject(new Error(d.error||'upload failed'))}catch(e){reject(new Error('upload failed: '+xhr.status))}}};
-      xhr.onerror=()=>reject(new Error('upload failed'));xhr.open('POST','/send/file');xhr.send(fd);
+      xhr.onerror=()=>reject(new Error('upload failed'));xhr.open('POST','/send/file');xhr.setRequestHeader('X-Client-ID',myClientId);xhr.send(fd);
     });
     dz.classList.remove('uploading');dz.classList.add('ready');prog.style.display='none';
     const url=location.origin+'/recv/'+resp.token;
@@ -369,7 +388,7 @@ const textInput=document.getElementById('textInput'),charCount=document.getEleme
 textInput.addEventListener('input',()=>{const len=new Blob([textInput.value]).size;charCount.textContent=formatSize(len);charCount.classList.toggle('warn',len>9*1024*1024);sendTextBtn.disabled=!textInput.value.trim()||len>10*1024*1024});
 async function sendText(){
   const content=textInput.value;if(!content.trim())return;sendTextBtn.disabled=true;
-  try{const r=await fetch('/send/text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});const d=await r.json();if(!r.ok)throw new Error(d.error);
+  try{const r=await fetch('/send/text',{method:'POST',headers:{'Content-Type':'application/json','X-Client-ID':myClientId},body:JSON.stringify({content})});const d=await r.json();if(!r.ok)throw new Error(d.error);
     sentTextCache[d.token]=content;
     if(recvItems.some(i=>i.token===d.token))renderRecvList();
     const url=location.origin+'/recv/'+d.token;const res=document.getElementById('textResult');res.style.display='block';
@@ -406,9 +425,31 @@ function renderRecvList(){
 async function loadTextContent(item){
   const cached=sentTextCache[item.token];
   if(cached!==undefined){renderTextContent(item.token,cached);return}
-  try{const r=await fetch('/preview/'+item.token);const d=await r.json();
-    renderTextContent(item.token,d.preview||'');
+  try{
+    const preview=await fetchTextPreview(item.token);
+    renderTextPreview(item.token,preview);
   }catch(e){}
+}
+async function fetchTextPreview(token){
+  const r=await fetch('/preview/'+token);
+  const d=await r.json();
+  if(!r.ok)throw new Error(d.error||'preview failed');
+  return d.preview??'';
+}
+async function fetchTextContent(token){
+  const cached=sentTextCache[token];
+  if(cached!==undefined)return cached;
+  const r=await fetch('/recv/'+token);
+  const d=await r.json();
+  if(!r.ok)throw new Error(d.error||'recv failed');
+  const content=d.content??'';
+  sentTextCache[token]=content;
+  return content;
+}
+function renderTextPreview(token,content){
+  const pre=document.getElementById('preview-'+token),full=document.getElementById('full-'+token);
+  if(pre)pre.textContent=content;
+  if(full&&!sentTextCache[token])full.textContent=content;
 }
 function renderTextContent(token,content){
   const pre=document.getElementById('preview-'+token),full=document.getElementById('full-'+token);
@@ -421,14 +462,20 @@ function renderTextContent(token,content){
 }
 function looksLikeCode(text){return[/^(import|from|const|let|var|func|def|class|package|module)\s/m,/[{}\[\]];?\s*$/m,/^\s*(if|for|while|return)\s*[\(]/m,/^#include/m,/^(pub\s+)?fn\s/m].some(p=>p.test(text))}
 function looksLikeURL(text){return /https?:\/\//.test(text)}
-async function copyRecvText(token,btn){try{let content=sentTextCache[token];if(content===undefined){const r=await fetch('/recv/'+token);const d=await r.json();content=d.content}await navigator.clipboard.writeText(content);const orig=btn.textContent;btn.textContent=t('copied');btn.classList.add('btn-success');setTimeout(()=>{btn.textContent=orig;btn.classList.remove('btn-success')},2000)}catch(e){showToast('Copy failed')}}
-function toggleTextFull(token){document.getElementById('full-'+token).classList.toggle('show')}
+async function copyRecvText(token,btn){try{const content=await fetchTextContent(token);await copyTextToClipboard(content);const orig=btn.textContent;btn.textContent=t('copied');btn.classList.add('btn-success');setTimeout(()=>{btn.textContent=orig;btn.classList.remove('btn-success')},2000)}catch(e){showToast('Copy failed')}}
+async function toggleTextFull(token){const el=document.getElementById('full-'+token);if(!sentTextCache[token]){try{const content=await fetchTextContent(token);renderTextContent(token,content)}catch(e){return showToast('Load failed')}}el.classList.toggle('show')}
 function updateProgress(d){const bar=document.getElementById('pbar-'+d.token),fill=document.getElementById('pfill-'+d.token);if(bar&&fill){bar.style.display='block';fill.style.width=(d.total>0?Math.round(d.bytes/d.total*100):0)+'%'}}
 function markDone(token){const item=recvItems.find(i=>i.token===token);if(item){historyItems.unshift(item);if(historyItems.length>20)historyItems=historyItems.slice(0,20);document.getElementById('historyCount').textContent='('+historyItems.length+')'}}
 
 // ========== HISTORY ==========
-function toggleHistory(){const el=document.getElementById('historyContent'),arrow=document.getElementById('historyArrow');if(el.classList.contains('show')){el.classList.remove('show');arrow.innerHTML='&#9654;'}else{el.classList.add('show');arrow.innerHTML='&#9660;';renderHistory()}}
-function renderHistory(){const el=document.getElementById('historyContent');if(historyItems.length===0){el.innerHTML=`<div class="device-empty">${t('noContent')}</div>`;return}el.innerHTML=historyItems.map(item=>`<div class="recv-item"><div class="recv-icon">${item.type==='text'?'&#128196;':'&#128196;'}</div><div class="recv-info"><div class="recv-name">${esc(item.name||t('newText'))}</div><div class="recv-size">${formatSize(item.size)}</div></div></div>`).join('')}
+async function fetchHistory(){try{const r=await fetch('/history');const d=await r.json();if(d.history){historyItems=d.history.reverse();};document.getElementById('historyCount').textContent='('+historyItems.length+')'}catch(e){}}
+function toggleHistory(){const el=document.getElementById('historyContent'),arrow=document.getElementById('historyArrow');if(el.classList.contains('show')){el.classList.remove('show');arrow.innerHTML='&#9654;'}else{el.classList.add('show');arrow.innerHTML='&#9660;';fetchHistory().then(renderHistory)}}
+function renderHistory(){const el=document.getElementById('historyContent');if(historyItems.length===0){el.innerHTML=`<div class="device-empty">${t('noContent')}</div>`;return}el.innerHTML=historyItems.map(item=>{
+  const tStr = new Date(item.timestamp*1000).toLocaleString();
+  const dirIcon = item.direction==='send'?'&#8594;':'&#8592;';
+  const statusIcon = item.status==='success'?'&#9989;':'&#10060;';
+  return `<div class="recv-item"><div class="recv-icon">${item.type==='text'?'&#128196;':'&#128193;'}</div><div class="recv-info"><div class="recv-name">${statusIcon} [${tStr}] ${dirIcon} ${esc(item.name||t('textSent'))} (${esc(item.peer||'-')})</div><div class="recv-size">${formatSize(item.size)}</div></div></div>`;
+}).join('')}
 
 // ========== SETTINGS ==========
 function openSettings(){applyDeviceName();document.getElementById('settingsModal').classList.add('show')}
@@ -451,7 +498,31 @@ function showToast(msg){const c=document.getElementById('toastContainer');const 
 // ========== UTILS ==========
 function formatSize(b){if(b>=1073741824)return(b/1073741824).toFixed(1)+' GB';if(b>=1048576)return(b/1048576).toFixed(1)+' MB';if(b>=1024)return(b/1024).toFixed(1)+' KB';return b+' B'}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
-async function copyText(text,btn){try{await navigator.clipboard.writeText(text);const o=btn.textContent;btn.textContent=t('copied');btn.classList.add('btn-success');setTimeout(()=>{btn.textContent=o;btn.classList.remove('btn-success')},2000)}catch(e){}}
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+  } else {
+    let textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.width = "2em";
+    textArea.style.height = "2em";
+    textArea.style.padding = "0";
+    textArea.style.border = "none";
+    textArea.style.outline = "none";
+    textArea.style.boxShadow = "none";
+    textArea.style.background = "transparent";
+    textArea.style.opacity = "0.0001";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try { textArea.setSelectionRange(0, 999999); } catch(e) {}
+    try { document.execCommand('copy'); } finally { textArea.remove(); }
+  }
+}
+async function copyText(text,btn){try{await copyTextToClipboard(text);const o=btn.textContent;btn.textContent=t('copied');btn.classList.add('btn-success');setTimeout(()=>{btn.textContent=o;btn.classList.remove('btn-success')},2000)}catch(e){}}
 document.getElementById('settingsModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeSettings()});
 
 init();

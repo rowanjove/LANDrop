@@ -3,10 +3,13 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"sync"
 )
 
 type ClipboardManager struct {
-	broker *SSEBroker
+	broker  *SSEBroker
+	content string
+	mu      sync.RWMutex
 }
 
 func NewClipboardManager(broker *SSEBroker) *ClipboardManager {
@@ -34,6 +37,10 @@ func (c *ClipboardManager) HandlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	c.mu.Lock()
+	c.content = req.Content
+	c.mu.Unlock()
+
 	count := c.broker.ClientCount()
 	c.broker.Broadcast("clipboard", map[string]string{
 		"content": req.Content,
@@ -41,5 +48,22 @@ func (c *ClipboardManager) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"pushed_to": count,
+	})
+}
+
+func (c *ClipboardManager) HandleGet(w http.ResponseWriter, r *http.Request) {
+	c.mu.RLock()
+	content := c.content
+	c.mu.RUnlock()
+
+	if content == "" {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{
+			"error": "clipboard is empty",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"content": content,
 	})
 }
