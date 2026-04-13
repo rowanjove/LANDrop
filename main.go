@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const version = "1.2.0"
+const version = "1.2.1"
 
 type interruptedDownloadError struct {
 	err error

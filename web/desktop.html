@@ -1,57 +1,869 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LAN Drop</title>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LAN Drop</title>
 <style>
-:root{--bg:#f6f7fb;--card:#fff;--fg:#17212b;--muted:#667085;--bd:#d8dee8;--pri:#2563eb;--ok:#169c61;--warn:#c77b08;--err:#d64545}
-@media(prefers-color-scheme:dark){:root{--bg:#0f172a;--card:#162033;--fg:#e5edf7;--muted:#94a3b8;--bd:#263244}}
-*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:var(--bg);color:var(--fg)}nav{display:flex;gap:.75rem;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid var(--bd);background:var(--card);position:sticky;top:0}button,input,textarea,select{font:inherit}button{cursor:pointer}textarea,input,select{width:100%;padding:.7rem;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--fg)}.wrap{max-width:1100px;margin:0 auto;padding:1rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem}.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:1rem}.row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}.sp{flex:1}.btn{border:1px solid var(--bd);background:transparent;color:var(--fg);padding:.55rem .9rem;border-radius:999px}.pri{background:var(--pri);border-color:var(--pri);color:#fff}.err{background:var(--err);border-color:var(--err);color:#fff}.muted{color:var(--muted)}.hint{font-size:.84rem;color:var(--muted)}.drop{border:2px dashed var(--bd);padding:1.2rem;border-radius:14px;text-align:center}.device,.recv,.hist{border:1px solid var(--bd);border-radius:12px;padding:.75rem;margin-top:.55rem}.dot{display:inline-block;width:.6rem;height:.6rem;border-radius:999px;background:var(--ok);margin-right:.45rem}.off{background:#98a2b3}.note{font-size:.82rem;color:var(--warn);margin-top:.3rem}.full{display:none;white-space:pre-wrap;word-break:break-word;margin-top:.4rem;padding:.6rem;border-radius:10px;background:var(--bg)}.full.show{display:block}.bar{height:8px;background:var(--bd);border-radius:999px;overflow:hidden;margin-top:.5rem}.fill{height:100%;background:var(--pri);width:0}.toastbox{position:fixed;right:1rem;bottom:1rem;display:flex;flex-direction:column;gap:.5rem}.toast{background:var(--card);border:1px solid var(--bd);padding:.7rem .9rem;border-radius:12px}.banner{display:none;padding:.75rem;border:1px solid var(--warn);border-radius:12px;background:color-mix(in srgb,var(--warn) 10%,var(--card));margin-bottom:1rem}.modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center}.modal.show{display:flex}.sheet{width:min(420px,92vw);background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:1rem}.count{font-size:.82rem}.chip{display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.75rem;font-weight:700}.okc{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,var(--card))}.erc{color:var(--err);background:color-mix(in srgb,var(--err) 12%,var(--card))}.inc{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,var(--card))}
-</style></head><body>
-<nav><b>LAN Drop</b><span id="dev" class="muted"></span><span id="addr" class="muted" style="font-family:Consolas,monospace"></span><span class="sp"></span><button class="btn" onclick="tg()">EN</button><button class="btn" onclick="oset()">⚙</button><button class="btn" onclick="pullc()">📋</button></nav>
+:root {
+  --bg: #f6f7fb;
+  --card: #ffffff;
+  --fg: #17212b;
+  --muted: #667085;
+  --bd: #d8dee8;
+  --pri: #2563eb;
+  --ok: #169c61;
+  --warn: #c77b08;
+  --err: #d64545;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a;
+    --card: #162033;
+    --fg: #e5edf7;
+    --muted: #94a3b8;
+    --bd: #263244;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+input, textarea, select {
+  width: 100%;
+  padding: 0.72rem 0.85rem;
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--fg);
+}
+textarea { min-height: 130px; resize: vertical; }
+nav {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid var(--bd);
+  background: var(--card);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.wrap {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+.layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.span-2 { grid-column: span 2; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  padding: 1rem;
+}
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sp { flex: 1; }
+.btn {
+  border: 1px solid var(--bd);
+  background: transparent;
+  color: var(--fg);
+  padding: 0.58rem 0.95rem;
+  border-radius: 999px;
+}
+.pri {
+  background: var(--pri);
+  border-color: var(--pri);
+  color: #fff;
+}
+.err {
+  background: var(--err);
+  border-color: var(--err);
+  color: #fff;
+}
+.muted { color: var(--muted); }
+.hint { font-size: 0.84rem; color: var(--muted); }
+.drop {
+  border: 2px dashed var(--bd);
+  border-radius: 14px;
+  padding: 1.25rem;
+  text-align: center;
+}
+.device, .recv, .hist {
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  padding: 0.8rem;
+  margin-top: 0.6rem;
+}
+.dot {
+  display: inline-block;
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 999px;
+  background: var(--ok);
+  margin-right: 0.45rem;
+}
+.off { background: #98a2b3; }
+.note { font-size: 0.82rem; color: var(--warn); margin-top: 0.35rem; }
+.full {
+  display: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 0.45rem;
+  padding: 0.65rem;
+  border-radius: 10px;
+  background: var(--bg);
+}
+.full.show { display: block; }
+.bar {
+  height: 8px;
+  background: var(--bd);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 0.55rem;
+}
+.fill { height: 100%; background: var(--pri); width: 0; }
+.toastbox {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 40;
+}
+.toast {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  max-width: 340px;
+}
+.banner {
+  display: none;
+  padding: 0.8rem;
+  border: 1px solid var(--warn);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warn) 10%, var(--card));
+  margin-bottom: 1rem;
+}
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.modal.show { display: flex; }
+.sheet {
+  width: min(420px, 92vw);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  padding: 1rem;
+}
+.count { font-size: 0.82rem; }
+.chip {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.okc { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, var(--card)); }
+.erc { color: var(--err); background: color-mix(in srgb, var(--err) 12%, var(--card)); }
+.inc { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--card)); }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  .span-2 { grid-column: auto; }
+  .toastbox {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(92vw, 360px);
+  }
+}
+</style>
+</head>
+<body>
+<nav>
+  <b>LAN Drop</b>
+  <span id="dev" class="muted"></span>
+  <span id="addr" class="muted" style="font-family:Consolas,monospace"></span>
+  <span class="sp"></span>
+  <button id="langBtn" class="btn" onclick="toggleLang()">EN</button>
+  <button class="btn" onclick="openSettings()" aria-label="Settings">&#9881;</button>
+  <button class="btn" onclick="pullClipboard()" aria-label="Clipboard">&#128203;</button>
+</nav>
+
 <div class="wrap">
-<div id="ban" class="banner"></div>
-<div class="card" style="margin-bottom:1rem;text-align:center"><img src="/qr?size=180" alt="QR" style="max-width:180px;width:100%"><div class="hint">Open this page on another device or scan the QR code.</div></div>
-<div class="grid">
-<div class="card"><h3 data-i18n="sf">发送文件</h3><div class="drop" id="dz" onclick="fi.click()" ondragover="ev(event,1)" ondragleave="ev(event,0)" ondrop="dropf(event)"><div data-i18n="dh">拖拽文件到这里，或点击选择</div><div class="hint" data-i18n="mx">最大 2 GB</div></div><input id="fi" type="file" multiple hidden onchange="up(this.files)"><div id="prog" style="display:none"><div class="bar"><div id="fill" class="fill"></div></div><div class="hint"><span id="pct">0%</span></div></div><div id="sres" style="display:none"></div></div>
-<div class="card"><h3 data-i18n="st">发送文本</h3><textarea id="txt" rows="6"></textarea><div class="row" style="margin-top:.5rem"><span id="cc" class="count muted">0 B</span><span class="sp"></span><button id="stb" class="btn pri" onclick="stx()" disabled data-i18n="send">发送</button></div><div id="tres" style="display:none"></div></div>
-<div class="card"><h3 data-i18n="dv">局域网设备</h3><div id="dlist"></div><div class="row" style="margin-top:.6rem"><input id="ip" placeholder="192.168.1.10:53217"><button class="btn" onclick="con()" data-i18n="conn">连接</button></div></div>
-<div class="card"><h3 data-i18n="rc">接收内容</h3><div id="rlist"></div><div id="rempty" class="muted" data-i18n="none">暂无内容</div></div>
-<div class="card"><div class="row"><h3 style="margin:0" data-i18n="hist">历史记录</h3><span id="hcount" class="count muted">(0)</span><span class="sp"></span><button class="btn" onclick="fh()" data-i18n="reload">刷新</button></div><div class="row" style="margin:.5rem 0"><input id="hdate" type="date" onchange="rh()"><select id="hpeer" onchange="rh()"></select><button class="btn" onclick="rsf()" data-i18n="reset">重置</button><button class="btn err" onclick="ch()" data-i18n="clr">清空</button></div><div id="hlist"></div></div>
-</div><div class="hint" style="margin-top:1rem;font-family:Consolas,monospace">CLI: landrop recv . --continue | landrop clipboard watch --target 192.168.1.10:53217</div></div>
-<div id="m" class="modal" onclick="if(event.target===this)cset()"><div class="sheet"><h3 data-i18n="set">设置</h3><div class="hint" data-i18n="dn">设备名称</div><input id="sname"><div class="row" style="margin-top:.8rem"><span class="sp"></span><button class="btn" onclick="cset()" data-i18n="cancel">取消</button><button class="btn pri" onclick="sset()" data-i18n="save">保存</button></div></div></div>
-<div id="tb" class="toastbox"></div>
+  <div id="banner" class="banner"></div>
+
+  <div class="layout">
+    <div class="card">
+      <h3 data-i18n="sf">Send File</h3>
+      <div id="drop" class="drop" onclick="fileInput.click()" ondragover="dragState(event, true)" ondragleave="dragState(event, false)" ondrop="dropFiles(event)">
+        <div data-i18n="dh">Drop files here, or click to choose</div>
+        <div class="hint" data-i18n="mx">Max 2 GB</div>
+      </div>
+      <input id="fileInput" type="file" multiple hidden onchange="uploadFiles(this.files)">
+      <div id="progress" style="display:none">
+        <div class="bar"><div id="fill" class="fill"></div></div>
+        <div class="hint"><span id="pct">0%</span></div>
+      </div>
+      <div id="fileResult" style="display:none"></div>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="st">Send Text</h3>
+      <textarea id="textInput" rows="6" data-i18n-placeholder="ph"></textarea>
+      <div class="row" style="margin-top:0.55rem">
+        <span id="charCount" class="count muted">0 B</span>
+        <span class="sp"></span>
+        <button id="sendTextBtn" class="btn pri" onclick="sendText()" disabled data-i18n="send">Send</button>
+      </div>
+      <div id="textResult" style="display:none"></div>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="dv">LAN Devices</h3>
+      <div id="deviceList"></div>
+      <div class="row" style="margin-top:0.65rem">
+        <input id="manualAddr" data-i18n-placeholder="manual" placeholder="IP:Port">
+        <button class="btn" onclick="connectManual()" data-i18n="conn">Connect</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="rc">Received</h3>
+      <div id="recvList"></div>
+      <div id="recvEmpty" class="muted" data-i18n="none">No content yet</div>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="qr">Scan</h3>
+      <div style="text-align:center">
+        <img src="/qr?size=180" alt="QR" style="max-width:180px;width:100%">
+        <div class="hint" data-i18n="qrh">Open this page on another device or scan the QR code.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <h3 style="margin:0" data-i18n="hist">History</h3>
+        <span id="historyCount" class="count muted">(0)</span>
+        <span class="sp"></span>
+        <button class="btn" onclick="loadHistory()" data-i18n="reload">Reload</button>
+      </div>
+      <div class="row" style="margin:0.55rem 0">
+        <input id="historyDate" type="date" onchange="renderHistory()">
+        <select id="historyPeer" onchange="renderHistory()"></select>
+      </div>
+      <div class="row" style="margin-bottom:0.35rem">
+        <button class="btn" onclick="resetHistoryFilters()" data-i18n="reset">Reset</button>
+        <button class="btn err" onclick="clearHistory()" data-i18n="clr">Clear</button>
+      </div>
+      <div id="historyList"></div>
+    </div>
+
+    <div class="card span-2">
+      <div class="hint" style="font-family:Consolas,monospace">
+        CLI: landrop recv . --continue | landrop clipboard watch --target 192.168.1.10:53217
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="settingsModal" class="modal" onclick="if(event.target===this)closeSettings()">
+  <div class="sheet">
+    <h3 data-i18n="set">Settings</h3>
+    <div class="hint" data-i18n="dn">Device Name</div>
+    <input id="settingsName">
+    <div class="row" style="margin-top:0.8rem">
+      <span class="sp"></span>
+      <button class="btn" onclick="closeSettings()" data-i18n="cancel">Cancel</button>
+      <button class="btn pri" onclick="saveSettings()" data-i18n="save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="toastBox" class="toastbox"></div>
+
 <script>
-const I={zh:{sf:'Send File',st:'Send Text',dh:'Drop files here or click to choose',mx:'Max 2 GB',send:'Send',dv:'LAN Devices',rc:'Received',none:'No content yet',conn:'Connect',hist:'History',reload:'Reload',reset:'Reset',clr:'Clear',set:'Settings',dn:'Device Name',cancel:'Cancel',save:'Save',nf:'New file',nt:'New text',cb:'Clipboard synced',cbf:'Clipboard pull failed',nod:'No devices found. Connect manually if needed.',oned:'This server runs in one-time mode: new links expire after one successful read.',onen:'One-time item: the link expires after a successful read.',onec:'This is a one-time item. Continuing will consume the link. Continue?',copy:'Copy All',copied:'Copied',open:'Expand',close:'Collapse',down:'Download',hs0:'All Devices',hem:'No matching history records',ok:'Success',er:'Failed',it:'Interrupted',saved:'Saved',load:'Load failed'},en:{sf:'Send File',st:'Send Text',dh:'Drop files here or click to choose',mx:'Max 2 GB',send:'Send',dv:'LAN Devices',rc:'Received',none:'No content yet',conn:'Connect',hist:'History',reload:'Reload',reset:'Reset',clr:'Clear',set:'Settings',dn:'Device Name',cancel:'Cancel',save:'Save',nf:'New file',nt:'New text',cb:'Clipboard synced',cbf:'Clipboard pull failed',nod:'No devices found. Connect manually if needed.',oned:'This server runs in one-time mode: new links expire after one successful read.',onen:'One-time item: the link expires after a successful read.',onec:'This is a one-time item. Continuing will consume the link. Continue?',copy:'Copy All',copied:'Copied',open:'Expand',close:'Collapse',down:'Download',hs0:'All Devices',hem:'No matching history records',ok:'Success',er:'Failed',it:'Interrupted',saved:'Saved',load:'Load failed'}};
-let L=(navigator.language||'').startsWith('zh')?'zh':'en',S={},D=[],R=[],H=[],C={},E=null,ID=Math.random().toString(36).slice(2);
-const t=k=>(I[L]||I.en)[k]||k,$=id=>document.getElementById(id),esc=s=>{let d=document.createElement('div');d.textContent=s??'';return d.innerHTML},fs=b=>b>=1073741824?(b/1073741824).toFixed(1)+' GB':b>=1048576?(b/1048576).toFixed(1)+' MB':b>=1024?(b/1024).toFixed(1)+' KB':(b||0)+' B';
-function tg(){L=L==='zh'?'en':'zh';ap()} function ap(){document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=t(e.dataset.i18n));$('txt').placeholder='Type text to send...';$('dev').textContent=S.name||'LAN Drop';$('sname').value=S.name||'LAN Drop';$('ban').style.display=S.one_time?'block':'none';$('ban').textContent=t('oned');$('dlist').innerHTML='';rd();rh();$('hpeer').innerHTML=`<option value="">${esc(t('hs0'))}</option>`+[...new Set(H.map(x=>x.peer).filter(Boolean))].sort().map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('')}
-function toast(m){let e=document.createElement('div');e.className='toast';e.textContent=m;$('tb').appendChild(e);setTimeout(()=>e.remove(),2600)}
-async function init(){ap();try{let r=await fetch('/info');S=await r.json();$('addr').textContent=location.host||S.addr||'';$('dev').textContent=S.name||'LAN Drop'}catch{}await fh();csse();fd();setInterval(fd,5000)}
-async function cp(txt){if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(txt);let a=document.createElement('textarea');a.value=txt;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.focus();a.select();try{document.execCommand('copy')}finally{a.remove()}}
-async function pullc(){try{let r=await fetch('/clipboard');if(!r.ok)throw 0;let d=await r.json();if(d.content){await cp(d.content);toast(t('cb'))}}catch{toast(t('cbf'))}}
-function csse(){if(E)E.close();E=new EventSource('/events');E.addEventListener('file_ready',e=>{let d=JSON.parse(e.data);if(d.sender===ID)return;R.unshift(d);rr();toast(d.type==='text'?t('nt'):`${t('nf')}: ${d.name||''}`)});E.addEventListener('device_found',e=>ad(JSON.parse(e.data)));E.addEventListener('device_lost',e=>ld(JSON.parse(e.data)));E.addEventListener('clipboard',e=>cp(JSON.parse(e.data).content).then(()=>toast(t('cb'))).catch(()=>toast(t('cbf'))));E.addEventListener('settings_updated',e=>{S.name=JSON.parse(e.data).device_name||S.name;ap()});E.addEventListener('done',()=>fh());E.onerror=()=>setTimeout(csse,3000)}
-function ev(e,on){e.preventDefault();$('dz').style.borderColor=on?'var(--pri)':'var(--bd)'} function dropf(e){e.preventDefault();ev(e,0);if(e.dataTransfer.files.length)up(e.dataTransfer.files)}
-async function up(files){if(!files||!files.length)return;let f=new FormData(),tot=0;for(const x of files){f.append('file',x);tot+=x.size}if(tot>2*1024*1024*1024)return toast(t('mx'));$('prog').style.display='block';$('sres').style.display='none';try{let x=new XMLHttpRequest();x.upload.onprogress=e=>{if(e.lengthComputable){let p=Math.round(e.loaded/e.total*100);$('fill').style.width=p+'%';$('pct').textContent=p+'%'}};let d=await new Promise((ok,bad)=>{x.onload=()=>{let j={};try{j=JSON.parse(x.responseText||'{}')}catch{};x.status>=200&&x.status<300?ok(j):bad(new Error(j.error||('HTTP '+x.status)))};x.onerror=()=>bad(new Error('upload failed'));x.open('POST','/send/file');x.setRequestHeader('X-Client-ID',ID);x.send(f)});let u=`${location.origin}/recv/${d.token}`;$('sres').style.display='block';$('sres').innerHTML=`<div class="recv"><div>${esc(files.length>1?files.length+' files':files[0].name)} (${fs(d.size)})</div><div class="hint" style="font-family:Consolas,monospace">${esc(u)}</div><div class="row" style="margin-top:.45rem"><button class="btn pri" onclick="bcopy('${esc(u)}',this)">${esc(t('copy'))}</button></div>${S.one_time?`<div class="note">${esc(t('onen'))}</div>`:''}</div>`}catch(e){toast(e.message)}$('prog').style.display='none';$('fill').style.width='0%'}
-function bcopy(v,b){cp(v).then(()=>{let o=b.textContent;b.textContent=t('copied');setTimeout(()=>b.textContent=o,1200)}).catch(()=>toast(t('load')))}
-$('txt').addEventListener('input',()=>{let n=new Blob([$('txt').value]).size;$('cc').textContent=fs(n);$('stb').disabled=!$('txt').value.trim()||n>10*1024*1024});
-async function stx(){let c=$('txt').value;if(!c.trim())return;$('stb').disabled=true;try{let r=await fetch('/send/text',{method:'POST',headers:{'Content-Type':'application/json','X-Client-ID':ID},body:JSON.stringify({content:c})});let d=await r.json();if(!r.ok)throw new Error(d.error||'send failed');C[d.token]=c;let u=`${location.origin}/recv/${d.token}`;$('tres').style.display='block';$('tres').innerHTML=`<div class="recv"><div>${esc(t('saved'))} (${fs(d.length)})</div><div class="hint" style="font-family:Consolas,monospace">${esc(u)}</div><div class="row" style="margin-top:.45rem"><button class="btn pri" onclick="bcopy('${esc(u)}',this)">${esc(t('copy'))}</button></div>${S.one_time?`<div class="note">${esc(t('onen'))}</div>`:''}</div>`}catch(e){toast(e.message)}$('stb').disabled=!$('txt').value.trim()}
-async function fd(){try{let r=await fetch('/devices');let d=await r.json();D=d.devices||[];rd()}catch{}}
-function ad(d){let i=D.findIndex(x=>x.addr===d.addr);i>=0?D[i]={...D[i],...d,online:true}:D.push({...d,online:true});rd()}
-function ld(d){let i=D.findIndex(x=>x.addr===d.addr);i>=0?D[i]={...D[i],...d,online:false}:D.push({...d,online:false});rd()}
-function ago(ts){let s=Math.max(0,Math.floor(Date.now()/1000)-Number(ts||0));if(s<60)return'just now';if(s<3600)return`${Math.floor(s/60)}m ago`;if(s<86400)return`${Math.floor(s/3600)}h ago`;return`${Math.floor(s/86400)}d ago`}
-function rd(){let e=$('dlist');if(!D.length){e.innerHTML=`<div class="muted">${esc(t('nod'))}</div>`;return}D.sort((a,b)=>Number(!!b.online)-Number(!!a.online)||Number(b.last_seen||0)-Number(a.last_seen||0));e.innerHTML=D.map(d=>`<div class="device" onclick="window.open('${/^https?:\/\//i.test(d.addr)?d.addr:location.protocol+'//'+d.addr}','_blank')"><div><span class="dot ${d.online?'':'off'}"></span><b>${esc(d.name||d.addr)}</b></div><div class="hint" style="font-family:Consolas,monospace">${esc(d.addr)}</div><div class="hint">${esc(d.online?'Online':'Last active '+ago(d.last_seen))}</div></div>`).join('')}
-function con(){let v=$('ip').value.trim();if(v)window.open(/^https?:\/\//i.test(v)?v:location.protocol+'//'+v,'_blank')}
-function cf(tok){let it=R.find(x=>x.token===tok);return !it||!it.one_time||C[tok]!==undefined||confirm(t('onec'))}
-async function ptxt(tok){let r=await fetch('/preview/'+tok),d=await r.json();if(!r.ok)throw 0;return d.preview||''}
-async function gtxt(tok){if(C[tok]!==undefined)return C[tok];let r=await fetch('/recv/'+tok),d=await r.json();if(!r.ok)throw new Error(d.error||'recv failed');C[tok]=d.content||'';return C[tok]}
-function rr(){let e=$('rlist');$('rempty').style.display=R.length?'none':'block';e.innerHTML=R.map(it=>`<div class="recv"><div><b>${esc(it.type==='text'?'New Text':(it.name||'file'))}</b></div><div class="hint">${fs(it.size)}</div>${it.one_time?`<div class="note">${esc(t('onen'))}</div>`:''}${it.type==='text'?`<div id="p-${it.token}" class="hint"></div><div id="f-${it.token}" class="full"></div><div class="row" style="margin-top:.4rem"><button class="btn pri" onclick="cr('${it.token}',this)">${esc(t('copy'))}</button><button class="btn" id="tg-${it.token}" onclick="tr('${it.token}')">${esc(t('open'))}</button></div>`:`<div class="row" style="margin-top:.45rem"><a class="btn pri" href="/recv/${it.token}" download="${esc(it.name||'download')}" onclick="return cf('${it.token}')">${esc(t('down'))}</a></div>`}</div>`).join('');R.filter(x=>x.type==='text').forEach(async it=>{if(C[it.token]!==undefined){renderFull(it.token,C[it.token],0);return}try{$('p-'+it.token).textContent=await ptxt(it.token)}catch{}})}
-function renderFull(tok,txt,open){$('p-'+tok).textContent=txt.slice(0,220);let f=$('f-'+tok),b=$('tg-'+tok);if(f){f.innerHTML=esc(txt).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');f.classList.toggle('show',!!open)}if(b)b.textContent=open?t('close'):t('open')}
-async function cr(tok,b){if(!cf(tok))return;try{let txt=await gtxt(tok);await cp(txt);let o=b.textContent;b.textContent=t('copied');setTimeout(()=>b.textContent=o,1200)}catch{toast(t('load'))}}
-async function tr(tok){if(!cf(tok))return;try{let f=$('f-'+tok),open=f.classList.contains('show');renderFull(tok,await gtxt(tok),!open)}catch{toast(t('load'))}}
-async function fh(){try{let r=await fetch('/history');let d=await r.json();H=(d.history||[]).slice().reverse();$('hcount').textContent=`(${H.length})`;ap()}catch{}}
-function hc(st){return st==='failed'?`<span class="chip erc">${esc(t('er'))}</span>`:st==='interrupted'?`<span class="chip inc">${esc(t('it'))}</span>`:`<span class="chip okc">${esc(t('ok'))}</span>`}
-function rh(){let date=$('hdate').value,peer=$('hpeer').value,items=H.filter(x=>(!peer||x.peer===peer)&&(!date||new Date((x.timestamp||0)*1000).toISOString().slice(0,10)===date)),e=$('hlist');e.innerHTML=items.length?items.map(x=>`<div class="hist">${hc(x.status)} <b>${esc(x.name||x.type)}</b><div class="hint">${esc(new Date((x.timestamp||0)*1000).toLocaleString())} · ${fs(x.size)} · ${esc(x.peer||'-')}</div></div>`).join(''):`<div class="muted">${esc(t('hem'))}</div>`}
-function rsf(){$('hdate').value='';$('hpeer').value='';rh()}
-async function ch(){try{let r=await fetch('/history',{method:'DELETE'});if(!r.ok)throw 0;H=[];$('hcount').textContent='(0)';ap();rh();toast('History cleared')}catch{toast(t('load'))}}
-function oset(){$('m').classList.add('show');$('sname').value=S.name||'LAN Drop'} function cset(){$('m').classList.remove('show')}
-async function sset(){try{let r=await fetch('/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_name:$('sname').value.trim()})}),d=await r.json();if(!r.ok)throw 0;S.name=d.device_name||$('sname').value.trim();ap();cset();toast(t('saved'))}catch{toast(t('load'))}}
+const I = {
+  zh: {
+    sf: '\u53d1\u9001\u6587\u4ef6',
+    st: '\u53d1\u9001\u6587\u672c',
+    dh: '\u62d6\u62fd\u6587\u4ef6\u5230\u8fd9\u91cc\uff0c\u6216\u70b9\u51fb\u9009\u62e9',
+    mx: '\u6700\u5927 2 GB',
+    send: '\u53d1\u9001',
+    dv: '\u5c40\u57df\u7f51\u8bbe\u5907',
+    rc: '\u63a5\u6536\u5185\u5bb9',
+    none: '\u6682\u65e0\u5185\u5bb9',
+    conn: '\u8fde\u63a5',
+    hist: '\u5386\u53f2\u8bb0\u5f55',
+    reload: '\u5237\u65b0',
+    reset: '\u91cd\u7f6e',
+    clr: '\u6e05\u7a7a',
+    set: '\u8bbe\u7f6e',
+    dn: '\u8bbe\u5907\u540d\u79f0',
+    cancel: '\u53d6\u6d88',
+    save: '\u4fdd\u5b58',
+    nf: '\u6536\u5230\u65b0\u6587\u4ef6',
+    nt: '\u6536\u5230\u65b0\u6587\u672c',
+    cb: '\u526a\u8d34\u677f\u5df2\u540c\u6b65',
+    cbf: '\u62c9\u53d6\u526a\u8d34\u677f\u5931\u8d25',
+    nod: '\u6682\u65e0\u5176\u4ed6\u8bbe\u5907\uff0c\u53ef\u624b\u52a8\u8fde\u63a5',
+    oned: '\u5f53\u524d\u670d\u52a1\u5df2\u5f00\u542f\u4e00\u6b21\u6027\u4e0b\u8f7d\u6a21\u5f0f\uff1a\u65b0\u94fe\u63a5\u5728\u6210\u529f\u8bfb\u53d6\u4e00\u6b21\u540e\u5931\u6548\u3002',
+    onen: '\u4e00\u6b21\u6027\u5185\u5bb9\uff1a\u6210\u529f\u8bfb\u53d6\u540e\u94fe\u63a5\u4f1a\u5931\u6548\u3002',
+    onec: '\u8fd9\u662f\u4e00\u6b21\u6027\u5185\u5bb9\uff0c\u7ee7\u7eed\u4f1a\u6d88\u8017\u94fe\u63a5\u3002\u786e\u8ba4\u7ee7\u7eed\u5417\uff1f',
+    copy: '\u590d\u5236\u5168\u6587',
+    copied: '\u5df2\u590d\u5236',
+    open: '\u5c55\u5f00',
+    close: '\u6536\u8d77',
+    down: '\u4e0b\u8f7d',
+    hs0: '\u5168\u90e8\u8bbe\u5907',
+    hem: '\u6682\u65e0\u7b26\u5408\u6761\u4ef6\u7684\u5386\u53f2\u8bb0\u5f55',
+    ok: '\u6210\u529f',
+    er: '\u5931\u8d25',
+    it: '\u4e2d\u65ad',
+    saved: '\u5df2\u4fdd\u5b58',
+    load: '\u52a0\u8f7d\u5931\u8d25',
+    ph: '\u8f93\u5165\u8981\u53d1\u9001\u7684\u6587\u672c...',
+    manual: '\u624b\u52a8\u8f93\u5165 IP:Port',
+    qrh: '\u5728\u53e6\u4e00\u53f0\u8bbe\u5907\u4e0a\u6253\u5f00\u672c\u9875\uff0c\u6216\u626b\u63cf\u4e8c\u7ef4\u7801\u3002',
+    qr: '\u626b\u7801',
+    online: '\u5728\u7ebf',
+    last: '\u6700\u8fd1\u6d3b\u8dc3',
+    just: '\u521a\u521a',
+    min: '\u5206\u949f\u524d',
+    hour: '\u5c0f\u65f6\u524d',
+    day: '\u5929\u524d',
+    hclear: '\u5386\u53f2\u5df2\u6e05\u7a7a'
+  },
+  en: {
+    sf: 'Send File',
+    st: 'Send Text',
+    dh: 'Drop files here, or click to choose',
+    mx: 'Max 2 GB',
+    send: 'Send',
+    dv: 'LAN Devices',
+    rc: 'Received',
+    none: 'No content yet',
+    conn: 'Connect',
+    hist: 'History',
+    reload: 'Reload',
+    reset: 'Reset',
+    clr: 'Clear',
+    set: 'Settings',
+    dn: 'Device Name',
+    cancel: 'Cancel',
+    save: 'Save',
+    nf: 'New file',
+    nt: 'New text',
+    cb: 'Clipboard synced',
+    cbf: 'Clipboard pull failed',
+    nod: 'No devices found. Connect manually if needed.',
+    oned: 'This server runs in one-time mode: new links expire after one successful read.',
+    onen: 'One-time item: the link expires after a successful read.',
+    onec: 'This is a one-time item. Continuing will consume the link. Continue?',
+    copy: 'Copy All',
+    copied: 'Copied',
+    open: 'Expand',
+    close: 'Collapse',
+    down: 'Download',
+    hs0: 'All Devices',
+    hem: 'No matching history records',
+    ok: 'Success',
+    er: 'Failed',
+    it: 'Interrupted',
+    saved: 'Saved',
+    load: 'Load failed',
+    ph: 'Type text to send...',
+    manual: 'Enter IP:Port manually',
+    qrh: 'Open this page on another device or scan the QR code.',
+    qr: 'Scan',
+    online: 'Online',
+    last: 'Last active',
+    just: 'just now',
+    min: 'm ago',
+    hour: 'h ago',
+    day: 'd ago',
+    hclear: 'History cleared'
+  }
+};
+
+let L = (navigator.language || '').startsWith('zh') ? 'zh' : 'en';
+let S = {};
+let D = [];
+let R = [];
+let H = [];
+let C = {};
+let E = null;
+const CLIENT_ID = Math.random().toString(36).slice(2);
+
+const t = (key) => (I[L] || I.en)[key] || key;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => {
+  const d = document.createElement('div');
+  d.textContent = s ?? '';
+  return d.innerHTML;
+};
+const fmtSize = (b) => b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' :
+  b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' :
+  b >= 1024 ? (b / 1024).toFixed(1) + ' KB' : (b || 0) + ' B';
+
+function toggleLang() {
+  L = L === 'zh' ? 'en' : 'zh';
+  applyLang();
+}
+
+function applyLang() {
+  document.documentElement.lang = L === 'zh' ? 'zh-CN' : 'en';
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+    el.placeholder = t(el.dataset.i18nPlaceholder);
+  });
+  $('langBtn').textContent = L === 'zh' ? 'EN' : '\u4e2d\u6587';
+  $('textInput').placeholder = t('ph');
+  $('manualAddr').placeholder = t('manual');
+  $('dev').textContent = S.name || 'LAN Drop';
+  $('settingsName').value = S.name || 'LAN Drop';
+  $('banner').style.display = S.one_time ? 'block' : 'none';
+  $('banner').textContent = t('oned');
+  renderDevices();
+  renderRecv();
+  renderHistory();
+  renderPeerFilter();
+}
+
+function toast(msg) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  $('toastBox').appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+async function init() {
+  applyLang();
+  try {
+    const r = await fetch('/info');
+    S = await r.json();
+    $('addr').textContent = location.host || S.addr || '';
+    $('dev').textContent = S.name || 'LAN Drop';
+  } catch {}
+  await loadHistory();
+  connectSSE();
+  loadDevices();
+  setInterval(loadDevices, 5000);
+}
+
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.focus();
+  area.select();
+  try {
+    document.execCommand('copy');
+  } finally {
+    area.remove();
+  }
+}
+
+async function pullClipboard() {
+  try {
+    const r = await fetch('/clipboard');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (d.content) {
+      await copyText(d.content);
+      toast(t('cb'));
+    }
+  } catch {
+    toast(t('cbf'));
+  }
+}
+
+function connectSSE() {
+  if (E) E.close();
+  E = new EventSource('/events');
+  E.addEventListener('file_ready', (e) => {
+    const d = JSON.parse(e.data);
+    if (d.sender === CLIENT_ID) return;
+    R.unshift(d);
+    renderRecv();
+    toast(d.type === 'text' ? t('nt') : `${t('nf')}: ${d.name || ''}`);
+  });
+  E.addEventListener('device_found', (e) => upsertDevice(JSON.parse(e.data), true));
+  E.addEventListener('device_lost', (e) => upsertDevice(JSON.parse(e.data), false));
+  E.addEventListener('clipboard', (e) => {
+    copyText(JSON.parse(e.data).content).then(() => toast(t('cb'))).catch(() => toast(t('cbf')));
+  });
+  E.addEventListener('settings_updated', (e) => {
+    S.name = JSON.parse(e.data).device_name || S.name;
+    applyLang();
+  });
+  E.addEventListener('done', () => loadHistory());
+  E.onerror = () => setTimeout(connectSSE, 3000);
+}
+
+function dragState(e, on) {
+  e.preventDefault();
+  $('drop').style.borderColor = on ? 'var(--pri)' : 'var(--bd)';
+}
+
+function dropFiles(e) {
+  e.preventDefault();
+  dragState(e, false);
+  if (e.dataTransfer.files.length) {
+    uploadFiles(e.dataTransfer.files);
+  }
+}
+
+async function uploadFiles(files) {
+  if (!files || !files.length) return;
+  const form = new FormData();
+  let total = 0;
+  for (const f of files) {
+    form.append('file', f);
+    total += f.size;
+  }
+  if (total > 2 * 1024 * 1024 * 1024) {
+    toast(t('mx'));
+    return;
+  }
+  $('progress').style.display = 'block';
+  $('fileResult').style.display = 'none';
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const p = Math.round(e.loaded / e.total * 100);
+      $('fill').style.width = p + '%';
+      $('pct').textContent = p + '%';
+    };
+    const d = await new Promise((resolve, reject) => {
+      xhr.onload = () => {
+        let payload = {};
+        try { payload = JSON.parse(xhr.responseText || '{}'); } catch {}
+        if (xhr.status >= 200 && xhr.status < 300) resolve(payload);
+        else reject(new Error(payload.error || ('HTTP ' + xhr.status)));
+      };
+      xhr.onerror = () => reject(new Error('upload failed'));
+      xhr.open('POST', '/send/file');
+      xhr.setRequestHeader('X-Client-ID', CLIENT_ID);
+      xhr.send(form);
+    });
+    const url = `${location.origin}/recv/${d.token}`;
+    $('fileResult').style.display = 'block';
+    $('fileResult').innerHTML =
+      `<div class="recv"><div>${esc(files.length > 1 ? files.length + ' files' : files[0].name)} (${fmtSize(d.size)})</div>` +
+      `<div class="hint" style="font-family:Consolas,monospace">${esc(url)}</div>` +
+      `<div class="row" style="margin-top:0.45rem"><button class="btn pri" onclick='copyLink(${JSON.stringify(url)}, this)'>${esc(t('copy'))}</button></div>` +
+      (S.one_time ? `<div class="note">${esc(t('onen'))}</div>` : '') +
+      `</div>`;
+  } catch (e) {
+    toast(e.message);
+  }
+  $('progress').style.display = 'none';
+  $('fill').style.width = '0%';
+}
+
+function copyLink(value, btn) {
+  copyText(value).then(() => {
+    const old = btn.textContent;
+    btn.textContent = t('copied');
+    setTimeout(() => { btn.textContent = old; }, 1200);
+  }).catch(() => toast(t('load')));
+}
+
+$('textInput').addEventListener('input', () => {
+  const size = new Blob([$('textInput').value]).size;
+  $('charCount').textContent = fmtSize(size);
+  $('sendTextBtn').disabled = !$('textInput').value.trim() || size > 10 * 1024 * 1024;
+});
+
+async function sendText() {
+  const content = $('textInput').value;
+  if (!content.trim()) return;
+  $('sendTextBtn').disabled = true;
+  try {
+    const r = await fetch('/send/text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Client-ID': CLIENT_ID },
+      body: JSON.stringify({ content })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'send failed');
+    C[d.token] = content;
+    const url = `${location.origin}/recv/${d.token}`;
+    $('textResult').style.display = 'block';
+    $('textResult').innerHTML =
+      `<div class="recv"><div>${esc(t('saved'))} (${fmtSize(d.length)})</div>` +
+      `<div class="hint" style="font-family:Consolas,monospace">${esc(url)}</div>` +
+      `<div class="row" style="margin-top:0.45rem"><button class="btn pri" onclick='copyLink(${JSON.stringify(url)}, this)'>${esc(t('copy'))}</button></div>` +
+      (S.one_time ? `<div class="note">${esc(t('onen'))}</div>` : '') +
+      `</div>`;
+  } catch (e) {
+    toast(e.message);
+  }
+  $('sendTextBtn').disabled = !$('textInput').value.trim();
+}
+
+async function loadDevices() {
+  try {
+    const r = await fetch('/devices');
+    const d = await r.json();
+    D = d.devices || [];
+    renderDevices();
+  } catch {}
+}
+
+function upsertDevice(device, online) {
+  const idx = D.findIndex((x) => x.addr === device.addr);
+  const merged = { ...device, online };
+  if (idx >= 0) D[idx] = { ...D[idx], ...merged };
+  else D.push(merged);
+  renderDevices();
+}
+
+function relativeText(ts) {
+  const s = Math.max(0, Math.floor(Date.now() / 1000) - Number(ts || 0));
+  if (s < 60) return t('just');
+  if (s < 3600) return `${Math.floor(s / 60)} ${t('min')}`;
+  if (s < 86400) return `${Math.floor(s / 3600)} ${t('hour')}`;
+  return `${Math.floor(s / 86400)} ${t('day')}`;
+}
+
+function toURL(addr) {
+  return /^https?:\/\//i.test(addr) ? addr : location.protocol + '//' + addr;
+}
+
+function renderDevices() {
+  const el = $('deviceList');
+  if (!D.length) {
+    el.innerHTML = `<div class="muted">${esc(t('nod'))}</div>`;
+    return;
+  }
+  D.sort((a, b) => Number(!!b.online) - Number(!!a.online) || Number(b.last_seen || 0) - Number(a.last_seen || 0));
+  el.innerHTML = D.map((d) =>
+    `<div class="device" onclick='window.open(${JSON.stringify(toURL(d.addr))}, "_blank", "noopener")'>` +
+    `<div><span class="dot ${d.online ? '' : 'off'}"></span><b>${esc(d.name || d.addr)}</b></div>` +
+    `<div class="hint" style="font-family:Consolas,monospace">${esc(d.addr)}</div>` +
+    `<div class="hint">${esc(d.online ? t('online') : `${t('last')}: ${relativeText(d.last_seen)}`)}</div>` +
+    `</div>`
+  ).join('');
+}
+
+function connectManual() {
+  const addr = $('manualAddr').value.trim();
+  if (addr) window.open(toURL(addr), '_blank', 'noopener');
+}
+
+function confirmOneTime(token) {
+  const item = R.find((x) => x.token === token);
+  return !item || !item.one_time || C[token] !== undefined || window.confirm(t('onec'));
+}
+
+async function fetchTextPreview(token) {
+  const r = await fetch('/preview/' + token);
+  const d = await r.json();
+  if (!r.ok) throw new Error();
+  return d.preview || '';
+}
+
+async function fetchTextContent(token) {
+  if (C[token] !== undefined) return C[token];
+  const r = await fetch('/recv/' + token);
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || 'recv failed');
+  C[token] = d.content || '';
+  return C[token];
+}
+
+function renderFull(token, text, open) {
+  $('preview-' + token).textContent = text.slice(0, 220);
+  const full = $('full-' + token);
+  const btn = $('toggle-' + token);
+  if (full) {
+    full.innerHTML = esc(text).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    full.classList.toggle('show', !!open);
+  }
+  if (btn) btn.textContent = open ? t('close') : t('open');
+}
+
+function renderRecv() {
+  const el = $('recvList');
+  $('recvEmpty').style.display = R.length ? 'none' : 'block';
+  el.innerHTML = R.map((item) => {
+    const note = item.one_time ? `<div class="note">${esc(t('onen'))}</div>` : '';
+    if (item.type === 'text') {
+      return `<div class="recv">` +
+        `<div><b>${esc(t('nt'))}</b></div>` +
+        `<div class="hint">${fmtSize(item.size)}</div>` +
+        note +
+        `<div id="preview-${item.token}" class="hint"></div>` +
+        `<div id="full-${item.token}" class="full"></div>` +
+        `<div class="row" style="margin-top:0.45rem">` +
+        `<button class="btn pri" onclick='copyRecvText(${JSON.stringify(item.token)}, this)'>${esc(t('copy'))}</button>` +
+        `<button id="toggle-${item.token}" class="btn" onclick='toggleRecvText(${JSON.stringify(item.token)})'>${esc(t('open'))}</button>` +
+        `</div></div>`;
+    }
+    return `<div class="recv">` +
+      `<div><b>${esc(item.name || 'file')}</b></div>` +
+      `<div class="hint">${fmtSize(item.size)}</div>` +
+      note +
+      `<div class="row" style="margin-top:0.45rem">` +
+      `<a class="btn pri" href="/recv/${item.token}" download="${esc(item.name || 'download')}" onclick='return confirmOneTime(${JSON.stringify(item.token)})'>${esc(t('down'))}</a>` +
+      `</div></div>`;
+  }).join('');
+  R.filter((x) => x.type === 'text').forEach(async (item) => {
+    if (C[item.token] !== undefined) {
+      renderFull(item.token, C[item.token], false);
+      return;
+    }
+    try {
+      $('preview-' + item.token).textContent = await fetchTextPreview(item.token);
+    } catch {}
+  });
+}
+
+async function copyRecvText(token, btn) {
+  if (!confirmOneTime(token)) return;
+  try {
+    const text = await fetchTextContent(token);
+    await copyText(text);
+    const old = btn.textContent;
+    btn.textContent = t('copied');
+    setTimeout(() => { btn.textContent = old; }, 1200);
+  } catch {
+    toast(t('load'));
+  }
+}
+
+async function toggleRecvText(token) {
+  if (!confirmOneTime(token)) return;
+  try {
+    const full = $('full-' + token);
+    const open = full.classList.contains('show');
+    renderFull(token, await fetchTextContent(token), !open);
+  } catch {
+    toast(t('load'));
+  }
+}
+
+async function loadHistory() {
+  try {
+    const r = await fetch('/history');
+    const d = await r.json();
+    H = (d.history || []).slice().reverse();
+    $('historyCount').textContent = `(${H.length})`;
+    renderPeerFilter();
+    renderHistory();
+  } catch {}
+}
+
+function renderPeerFilter() {
+  const peers = [...new Set(H.map((x) => x.peer).filter(Boolean))].sort();
+  const current = $('historyPeer').value;
+  $('historyPeer').innerHTML = `<option value="">${esc(t('hs0'))}</option>` + peers.map((peer) =>
+    `<option value="${esc(peer)}">${esc(peer)}</option>`
+  ).join('');
+  if (peers.includes(current)) $('historyPeer').value = current;
+}
+
+function statusChip(status) {
+  if (status === 'failed') return `<span class="chip erc">${esc(t('er'))}</span>`;
+  if (status === 'interrupted') return `<span class="chip inc">${esc(t('it'))}</span>`;
+  return `<span class="chip okc">${esc(t('ok'))}</span>`;
+}
+
+function renderHistory() {
+  const date = $('historyDate').value;
+  const peer = $('historyPeer').value;
+  const items = H.filter((x) =>
+    (!peer || x.peer === peer) &&
+    (!date || new Date((x.timestamp || 0) * 1000).toISOString().slice(0, 10) === date)
+  );
+  $('historyList').innerHTML = items.length ? items.map((x) =>
+    `<div class="hist">${statusChip(x.status)} <b>${esc(x.name || x.type)}</b>` +
+    `<div class="hint">${esc(new Date((x.timestamp || 0) * 1000).toLocaleString())} | ${fmtSize(x.size)} | ${esc(x.peer || '-')}</div></div>`
+  ).join('') : `<div class="muted">${esc(t('hem'))}</div>`;
+}
+
+function resetHistoryFilters() {
+  $('historyDate').value = '';
+  $('historyPeer').value = '';
+  renderHistory();
+}
+
+async function clearHistory() {
+  try {
+    const r = await fetch('/history', { method: 'DELETE' });
+    if (!r.ok) throw new Error();
+    H = [];
+    $('historyCount').textContent = '(0)';
+    renderPeerFilter();
+    renderHistory();
+    toast(t('hclear'));
+  } catch {
+    toast(t('load'));
+  }
+}
+
+function openSettings() {
+  $('settingsName').value = S.name || 'LAN Drop';
+  $('settingsModal').classList.add('show');
+}
+
+function closeSettings() {
+  $('settingsModal').classList.remove('show');
+}
+
+async function saveSettings() {
+  try {
+    const r = await fetch('/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_name: $('settingsName').value.trim() })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error();
+    S.name = d.device_name || $('settingsName').value.trim();
+    applyLang();
+    closeSettings();
+    toast(t('saved'));
+  } catch {
+    toast(t('load'));
+  }
+}
+
 init();
-</script></body></html>
+</script>
+</body>
+</html>
