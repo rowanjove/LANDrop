@@ -24,13 +24,7 @@ var (
 )
 
 func getHistoryPath() string {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		configDir = os.TempDir()
-	}
-	dir := filepath.Join(configDir, "LANDrop")
-	os.MkdirAll(dir, 0755)
-	return filepath.Join(dir, "history.json")
+	return filepath.Join(getStateDir(), "history.json")
 }
 
 func LoadHistory() {
@@ -62,11 +56,13 @@ func AppendHistory(record *HistoryRecord) {
 	SaveHistory()
 }
 
-func ClearHistory() {
+func ClearHistory() int {
 	historyMu.Lock()
 	defer historyMu.Unlock()
+	count := len(historyList)
 	historyList = make([]*HistoryRecord, 0)
 	SaveHistory()
+	return count
 }
 
 func GetHistoryRecords() []*HistoryRecord {

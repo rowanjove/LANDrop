@@ -45,6 +45,7 @@ type DownloadOutcome int
 const (
 	DownloadReleased DownloadOutcome = iota
 	DownloadFailed
+	DownloadInterrupted
 	DownloadCompleted
 )
 
@@ -284,14 +285,17 @@ func (s *TransferStore) FinishDownload(token string, outcome DownloadOutcome, pe
 			case DownloadCompleted:
 				item.Downloaded = true
 				item.Claimed = false
-				s.addToHistory(item, peer, true)
+				s.addToHistory(item, peer, "success")
 				if item.FilePath != "" {
 					_ = os.Remove(item.FilePath)
 				}
 				delete(s.items, token)
 				return
 			case DownloadFailed:
-				s.addToHistory(item, peer, false)
+				s.addToHistory(item, peer, "failed")
+				item.Claimed = false
+			case DownloadInterrupted:
+				s.addToHistory(item, peer, "interrupted")
 				item.Claimed = false
 			case DownloadReleased:
 				item.Claimed = false
@@ -304,9 +308,11 @@ func (s *TransferStore) FinishDownload(token string, outcome DownloadOutcome, pe
 				return
 			}
 			item.Downloaded = true
-			s.addToHistory(item, peer, true)
+			s.addToHistory(item, peer, "success")
 		case DownloadFailed:
-			s.addToHistory(item, peer, false)
+			s.addToHistory(item, peer, "failed")
+		case DownloadInterrupted:
+			s.addToHistory(item, peer, "interrupted")
 		}
 	}
 }
@@ -330,15 +336,10 @@ func copyFile(srcPath string, dstPath string) error {
 	return dst.Close()
 }
 
-func (s *TransferStore) addToHistory(item *TransferItem, peer string, success bool) {
+func (s *TransferStore) addToHistory(item *TransferItem, peer string, status string) {
 	s.history = append(s.history, item)
 	if len(s.history) > 20 {
 		s.history = s.history[len(s.history)-20:]
-	}
-
-	status := "success"
-	if !success {
-		status = "failed"
 	}
 
 	AppendHistory(&HistoryRecord{

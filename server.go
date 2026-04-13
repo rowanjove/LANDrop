@@ -17,7 +17,6 @@ func getLocalIP() string {
 		return "127.0.0.1"
 	}
 
-	// Prefer private network IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
 	var fallback string
 	for _, addr := range addrs {
 		ipNet, ok := addr.(*net.IPNet)
@@ -28,23 +27,21 @@ func getLocalIP() string {
 		if ip4 == nil {
 			continue
 		}
-		// Check if private network
-		if ip4[0] == 192 && ip4[1] == 168 {
-			return ip4.String() // Best: 192.168.x.x
-		}
-		if ip4[0] == 10 {
-			return ip4.String() // Good: 10.x.x.x
-		}
-		if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 {
+
+		switch {
+		case ip4[0] == 192 && ip4[1] == 168:
+			return ip4.String()
+		case ip4[0] == 10:
+			return ip4.String()
+		case ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31:
 			if fallback == "" {
-				fallback = ip4.String() // OK: 172.16-31.x.x (might be Docker/WSL)
+				fallback = ip4.String()
 			}
-			continue
-		}
-		if fallback == "" {
+		case fallback == "":
 			fallback = ip4.String()
 		}
 	}
+
 	if fallback != "" {
 		return fallback
 	}
@@ -55,11 +52,11 @@ func findAvailablePort(startPort int) (int, error) {
 	for port := startPort; port <= startPort+10; port++ {
 		ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 		if err == nil {
-			ln.Close()
+			_ = ln.Close()
 			return port, nil
 		}
 	}
-	return 0, fmt.Errorf("端口 %d-%d 均被占用", startPort, startPort+10)
+	return 0, fmt.Errorf("ports %d-%d are all in use", startPort, startPort+10)
 }
 
 func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
@@ -68,7 +65,7 @@ func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
 		log.Fatalf("Error: %v", err)
 	}
 	if actualPort != port {
-		log.Printf("端口 %d 被占用，使用 %d", port, actualPort)
+		log.Printf("Port %d is busy, using %d instead", port, actualPort)
 	}
 
 	localIP := getLocalIP()
@@ -77,7 +74,7 @@ func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
 
 	app := NewApp(addr, pin)
 	app.oneTimeUse = oneTimeUse
-	app.mdns = NewMDNSManager(actualPort, app.broker)
+	app.mdns = NewMDNSManager(actualPort, app.broker, app.hostname)
 
 	mux := http.NewServeMux()
 	app.SetupRoutes(mux)
@@ -87,17 +84,15 @@ func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
 		handler = app.pin.Middleware(mux)
 	}
 
-	// Start mDNS
 	if err := app.mdns.Start(); err != nil {
-		log.Printf("mDNS 启动失败（设备发现不可用）: %v", err)
+		log.Printf("mDNS unavailable: %v", err)
 	}
 
-	// Cleanup on exit
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		log.Println("\n正在清理...")
+		log.Println("\nCleaning up...")
 		app.mdns.Stop()
 		app.store.Cleanup()
 		os.Exit(0)
@@ -113,7 +108,7 @@ func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
 		scheme = "https"
 		cert, err := generateSelfSignedCert()
 		if err != nil {
-			log.Fatalf("生成证书失败: %v", err)
+			log.Fatalf("failed to generate certificate: %v", err)
 		}
 		server.TLSConfig = &tls.Config{
 			Certificates: []tls.Certificate{cert},
@@ -121,19 +116,25 @@ func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
 	}
 
 	url := fmt.Sprintf("%s://%s", scheme, addr)
-	fmt.Println("╔════════════════════════════════════════╗")
-	fmt.Println("║           LAN Drop v1.1.0              ║")
-	fmt.Println("╠════════════════════════════════════════╣")
-	fmt.Printf("║  地址: %-31s ║\n", url)
+	fmt.Println("==========================================")
+	fmt.Printf("LAN Drop v%s\n", version)
+	fmt.Printf("Device: %s\n", app.hostname)
+	fmt.Printf("Address: %s\n", url)
 	if app.pin.IsEnabled() {
-		fmt.Printf("║  PIN:  %-31s ║\n", pin)
+		fmt.Printf("PIN: %s\n", pin)
 	}
-	fmt.Println("╚════════════════════════════════════════╝")
+	if oneTimeUse {
+		fmt.Println("Mode: one-time downloads enabled")
+	}
 	fmt.Println()
-	fmt.Println("二维码：")
+	fmt.Println("QR:")
 	fmt.Println(generateQRASCII(url))
-	fmt.Println("在浏览器中打开上面的地址，或用手机扫描二维码")
-	fmt.Println("按 Ctrl+C 退出")
+	fmt.Println("Open the address above in a browser, or scan the QR code.")
+	if useTLS {
+		fmt.Println("TLS tip: browsers will warn about the temporary self-signed certificate.")
+		fmt.Println("Use mkcert for a trusted local certificate, or continue past the warning.")
+	}
+	fmt.Println("Press Ctrl+C to stop.")
 
 	if useTLS {
 		log.Fatal(server.ListenAndServeTLS("", ""))

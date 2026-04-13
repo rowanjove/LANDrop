@@ -43,25 +43,37 @@ type App struct {
 	clipboard  *ClipboardManager
 	addr       string
 	hostname   string
+	systemName string
+	config     *ConfigStore
 	oneTimeUse bool // Token one-time-use mode (SEC-02)
 }
 
 func NewApp(addr string, pin string) *App {
 	broker := NewSSEBroker()
 	hostname, _ := os.Hostname()
+	hostname = normalizeDeviceName(hostname)
+	if hostname == "" {
+		hostname = "LAN Drop"
+	}
+	config := appConfig
+	deviceName := config.DeviceName(hostname)
 	return &App{
-		store:     NewTransferStore(),
-		broker:    broker,
-		pin:       NewPINManager(pin),
-		clipboard: NewClipboardManager(broker),
-		addr:      addr,
-		hostname:  hostname,
+		store:      NewTransferStore(),
+		broker:     broker,
+		pin:        NewPINManager(pin),
+		clipboard:  NewClipboardManager(broker),
+		addr:       addr,
+		hostname:   deviceName,
+		systemName: hostname,
+		config:     config,
 	}
 }
 
 func (a *App) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /", a.handleIndex)
 	mux.HandleFunc("GET /info", a.handleInfo)
+	mux.HandleFunc("GET /settings", a.handleSettings)
+	mux.HandleFunc("POST /settings", a.handleSettings)
 	mux.HandleFunc("GET /qr", a.handleQR)
 	mux.HandleFunc("POST /send/file", a.handleSendFile)
 	mux.HandleFunc("POST /send/text", a.handleSendText)
@@ -71,11 +83,8 @@ func (a *App) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /events", a.handleEvents)
 	mux.HandleFunc("POST /clipboard/push", a.clipboard.HandlePush)
 	mux.HandleFunc("GET /clipboard", a.clipboard.HandleGet)
-	mux.HandleFunc("GET /history", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"history": GetHistoryRecords(),
-		})
-	})
+	mux.HandleFunc("GET /history", a.handleHistory)
+	mux.HandleFunc("DELETE /history", a.handleClearHistory)
 }
 
 func isMobile(ua string) bool {
@@ -112,11 +121,12 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store, max-age=0")
-	writeJSON(w, http.StatusOK, map[string]string{
-		"name":    a.hostname,
-		"version": version,
-		"os":      getOS(),
-		"addr":    a.addr,
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"name":     a.hostname,
+		"version":  version,
+		"os":       getOS(),
+		"addr":     a.addr,
+		"one_time": a.oneTimeUse,
 	})
 }
 
@@ -177,11 +187,12 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 
 		item.OneTimeUse = a.oneTimeUse
 		a.broker.Broadcast("file_ready", map[string]interface{}{
-			"token":  item.Token,
-			"name":   item.Name,
-			"size":   item.Size,
-			"type":   "file",
-			"sender": r.Header.Get("X-Client-ID"),
+			"token":    item.Token,
+			"name":     item.Name,
+			"size":     item.Size,
+			"type":     "file",
+			"sender":   r.Header.Get("X-Client-ID"),
+			"one_time": item.OneTimeUse,
 		})
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -289,11 +300,12 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 	item.OneTimeUse = a.oneTimeUse
 
 	a.broker.Broadcast("file_ready", map[string]interface{}{
-		"token":  item.Token,
-		"name":   item.Name,
-		"size":   item.Size,
-		"type":   "file",
-		"sender": r.Header.Get("X-Client-ID"),
+		"token":    item.Token,
+		"name":     item.Name,
+		"size":     item.Size,
+		"type":     "file",
+		"sender":   r.Header.Get("X-Client-ID"),
+		"one_time": item.OneTimeUse,
 	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -336,11 +348,12 @@ func (a *App) handleSendText(w http.ResponseWriter, r *http.Request) {
 	item.OneTimeUse = a.oneTimeUse
 
 	a.broker.Broadcast("file_ready", map[string]interface{}{
-		"token":  item.Token,
-		"name":   "",
-		"size":   item.Size,
-		"type":   "text",
-		"sender": r.Header.Get("X-Client-ID"),
+		"token":    item.Token,
+		"name":     "",
+		"size":     item.Size,
+		"type":     "text",
+		"sender":   r.Header.Get("X-Client-ID"),
+		"one_time": item.OneTimeUse,
 	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -358,7 +371,7 @@ func (a *App) handlePreview(w http.ResponseWriter, r *http.Request) {
 	}
 	if item.Type != "text" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"type": "file", "name": item.Name, "size": item.Size,
+			"type": "file", "name": item.Name, "size": item.Size, "one_time": item.OneTimeUse,
 		})
 		return
 	}
@@ -367,7 +380,7 @@ func (a *App) handlePreview(w http.ResponseWriter, r *http.Request) {
 		content = content[:500]
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"type": "text", "preview": content, "size": item.Size,
+		"type": "text", "preview": content, "size": item.Size, "one_time": item.OneTimeUse,
 	})
 }
 
@@ -528,6 +541,9 @@ func (a *App) serveFile(w http.ResponseWriter, r *http.Request, item *TransferIt
 
 func classifyDownloadOutcome(totalSize int64, w *trackingResponseWriter) DownloadOutcome {
 	if w.writeErr != nil {
+		if w.bytesWritten > 0 {
+			return DownloadInterrupted
+		}
 		return DownloadFailed
 	}
 
@@ -535,6 +551,9 @@ func classifyDownloadOutcome(totalSize int64, w *trackingResponseWriter) Downloa
 	case http.StatusOK:
 		if totalSize == 0 || w.bytesWritten == totalSize {
 			return DownloadCompleted
+		}
+		if w.bytesWritten > 0 {
+			return DownloadInterrupted
 		}
 		return DownloadFailed
 	case http.StatusPartialContent:

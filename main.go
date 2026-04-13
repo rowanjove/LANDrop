@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,7 +16,19 @@ import (
 	"time"
 )
 
-const version = "1.1.0"
+const version = "1.2.0"
+
+type interruptedDownloadError struct {
+	err error
+}
+
+func (e interruptedDownloadError) Error() string {
+	return e.err.Error()
+}
+
+func (e interruptedDownloadError) Unwrap() error {
+	return e.err
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -24,47 +37,48 @@ func main() {
 	}
 
 	LoadHistory()
+	LoadConfig()
 
-	// Global flags
-	port := flag.Int("port", 53217, "服务端口")
-	pin := flag.String("pin", "", "设置 4 位 PIN 保护")
-	tlsFlag := flag.Bool("tls", false, "启用 HTTPS（自签名证书）")
+	port := flag.Int("port", 53217, "Server port")
+	pin := flag.String("pin", "", "4-digit PIN protection")
+	tlsFlag := flag.Bool("tls", false, "Use HTTPS")
 
 	switch os.Args[1] {
 	case "serve":
 		serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
-		sPort := serveCmd.Int("port", 53217, "服务端口")
-		sPin := serveCmd.String("pin", "", "设置 4 位 PIN 保护")
-		sTLS := serveCmd.Bool("tls", false, "启用 HTTPS")
-		sOneTime := serveCmd.Bool("one-time", false, "Token 一次有效")
-		serveCmd.Parse(os.Args[2:])
+		sPort := serveCmd.Int("port", 53217, "Server port")
+		sPin := serveCmd.String("pin", "", "4-digit PIN protection")
+		sTLS := serveCmd.Bool("tls", false, "Use HTTPS")
+		sOneTime := serveCmd.Bool("one-time", false, "Consume each token after one successful download")
+		_ = serveCmd.Parse(os.Args[2:])
 		startServer(*sPort, *sPin, *sTLS, *sOneTime)
 
 	case "send":
 		sendCmd := flag.NewFlagSet("send", flag.ExitOnError)
-		sPort := sendCmd.Int("port", 53217, "服务端口")
-		sPin := sendCmd.String("pin", "", "设置 4 位 PIN 保护")
-		sTLS := sendCmd.Bool("tls", false, "启用 HTTPS")
-		textMode := sendCmd.String("text", "", "发送文本内容")
-		sendCmd.Parse(os.Args[2:])
+		sPort := sendCmd.Int("port", 53217, "Server port")
+		sPin := sendCmd.String("pin", "", "4-digit PIN protection")
+		sTLS := sendCmd.Bool("tls", false, "Use HTTPS")
+		textMode := sendCmd.String("text", "", "Send plain text")
+		_ = sendCmd.Parse(os.Args[2:])
 
 		if *textMode != "" {
 			sendText(*sPort, *sPin, *sTLS, *textMode)
 		} else if sendCmd.NArg() > 0 {
 			sendFile(*sPort, *sPin, *sTLS, sendCmd.Args())
 		} else {
-			fmt.Println("用法: landrop send [--text '内容'] <文件路径...>")
+			fmt.Println("Usage: landrop send [--text 'message'] <file-or-directory...>")
 			os.Exit(1)
 		}
 
 	case "recv":
 		recvCmd := flag.NewFlagSet("recv", flag.ExitOnError)
-		rPin := recvCmd.String("pin", "", "设置 4 位 PIN 保护")
-		rTLS := recvCmd.Bool("tls", false, "启用 HTTPS")
-		rCont := recvCmd.Bool("c", false, "断点续传 (短选项)")
-		recvCmd.BoolVar(rCont, "continue", false, "断点续传")
-		rTarget := recvCmd.String("target", "", "直接连接指定设备(如 192.168.1.10:53217) 跳过扫描")
-		recvCmd.Parse(os.Args[2:])
+		rPin := recvCmd.String("pin", "", "4-digit PIN protection")
+		rTLS := recvCmd.Bool("tls", false, "Use HTTPS")
+		rCont := recvCmd.Bool("c", false, "Resume interrupted downloads")
+		recvCmd.BoolVar(rCont, "continue", false, "Resume interrupted downloads")
+		rTarget := recvCmd.String("target", "", "Directly connect to a specific device")
+		_ = recvCmd.Parse(os.Args[2:])
+
 		saveDir := "."
 		if recvCmd.NArg() > 0 {
 			saveDir = recvCmd.Arg(0)
@@ -72,24 +86,26 @@ func main() {
 		recvMode(saveDir, *rPin, *rTLS, *rCont, *rTarget)
 
 	case "devices":
-		devCmd := flag.NewFlagSet("devices", flag.ExitOnError)
-		devCmd.Parse(os.Args[2:])
 		listDevices()
+
+	case "clipboard":
+		runClipboardCommand(os.Args[2:])
 
 	case "history":
 		historyCmd := flag.NewFlagSet("history", flag.ExitOnError)
-		limit := historyCmd.Int("limit", 50, "显示最近的条数")
-		clear := historyCmd.Bool("clear", false, "清除传输历史记录")
-		historyCmd.Parse(os.Args[2:])
+		limit := historyCmd.Int("limit", 50, "Show the most recent N records")
+		clear := historyCmd.Bool("clear", false, "Clear the local transfer history")
+		_ = historyCmd.Parse(os.Args[2:])
+
 		if *clear {
-			ClearHistory()
-			fmt.Println("传输历史已清除")
+			cleared := ClearHistory()
+			fmt.Printf("Cleared %d history record(s)\n", cleared)
 			return
 		}
 
 		records := GetHistoryRecords()
 		if len(records) == 0 {
-			fmt.Println("暂无传输历史记录")
+			fmt.Println("No transfer history yet")
 			return
 		}
 
@@ -98,20 +114,24 @@ func main() {
 			showLimit = len(records)
 		}
 
-		fmt.Printf("最近 %d 条传输历史:\n\n", showLimit)
+		fmt.Printf("Recent %d transfer(s):\n\n", showLimit)
 		count := 0
 		for i := len(records) - 1; i >= 0; i-- {
-			r := records[i]
-			t := time.Unix(r.Timestamp, 0).Format("2006-01-02 15:04:05")
-			statusIcon := "✅"
-			if r.Status != "success" {
-				statusIcon = "❌"
+			record := records[i]
+			ts := time.Unix(record.Timestamp, 0).Format("2006-01-02 15:04:05")
+			statusIcon := "[OK]"
+			switch record.Status {
+			case "failed":
+				statusIcon = "[ERR]"
+			case "interrupted":
+				statusIcon = "[INT]"
 			}
 			dirIcon := "<-"
-			if r.Direction == "send" {
+			if record.Direction == "send" {
 				dirIcon = "->"
 			}
-			fmt.Printf("%s [%s] %s %s | %s (%s) | Peer: %s | Status: %s\n", statusIcon, t, dirIcon, r.Type, r.Name, formatSize(r.Size), r.Peer, r.Status)
+			fmt.Printf("%s [%s] %s %s | %s (%s) | Peer: %s | Status: %s\n",
+				statusIcon, ts, dirIcon, record.Type, record.Name, formatSize(record.Size), record.Peer, record.Status)
 			count++
 			if count >= showLimit {
 				break
@@ -125,41 +145,37 @@ func main() {
 		printUsage()
 
 	default:
-		// If first arg looks like a file, treat as "send"
 		if _, err := os.Stat(os.Args[1]); err == nil {
 			flag.Parse()
 			sendFile(*port, *pin, *tlsFlag, os.Args[1:])
-		} else {
-			fmt.Printf("未知命令: %s\n", os.Args[1])
-			printUsage()
-			os.Exit(1)
+			return
 		}
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", os.Args[1])
+		printUsage()
+		os.Exit(1)
 	}
 }
 
 func printUsage() {
-	fmt.Printf(`LAN Drop v%s — 局域网轻量文件与文本传输工具
+	fmt.Printf(`LAN Drop v%s
 
-用法:
-  landrop serve [options]         启动服务（默认命令）
-  landrop send <文件路径...>       发送文件
-  landrop send --text '内容'      发送文本
-  landrop recv [save-dir]         接收模式，自动保存到指定目录
-  landrop devices                 列出局域网内设备
-  landrop history [--limit N] [--clear] 查看传输历史
-  landrop version                 显示版本
+Usage:
+  landrop serve [options]
+  landrop send <file-or-directory...>
+  landrop send --text "message"
+  landrop recv [save-dir] [--target IP:Port] [--continue]
+  landrop devices
+  landrop clipboard watch [--target IP:Port]
+  landrop history [--limit N] [--clear]
+  landrop version
 
-选项:
-  --port <端口>    自定义端口（默认 53217）
-  --pin <PIN>     设置 4 位 PIN 保护
-  --tls           启用 HTTPS（自签名证书）
-
-示例:
-  landrop                         启动服务，打开浏览器使用
-  landrop send report.pdf         发送文件
-  landrop send --text 'hello'     发送文本
-  landrop serve --port 8888       使用自定义端口
-  landrop serve --pin 1234        启用 PIN 保护
+Examples:
+  landrop serve
+  landrop serve --pin 1234 --tls --one-time
+  landrop send ./report.pdf
+  landrop send --text "hello from LAN Drop"
+  landrop recv . --target 192.168.1.10:53217 --continue
+  landrop clipboard watch --target 192.168.1.10:53217
 `, version)
 }
 
@@ -173,14 +189,13 @@ func sendFile(port int, pin string, useTLS bool, files []string) {
 	addr := fmt.Sprintf("%s:%d", localIP, actualPort)
 
 	app := NewApp(addr, pin)
-	app.mdns = NewMDNSManager(actualPort, app.broker)
+	app.mdns = NewMDNSManager(actualPort, app.broker, app.hostname)
 
 	scheme := "http"
 	if useTLS {
 		scheme = "https"
 	}
 
-	// Add files
 	for _, filePath := range files {
 		item, err := app.SendLocalFile(filePath)
 		if err != nil {
@@ -188,13 +203,11 @@ func sendFile(port int, pin string, useTLS bool, files []string) {
 			continue
 		}
 		url := fmt.Sprintf("%s://%s/recv/%s", scheme, addr, item.Token)
-		fmt.Printf("文件: %s (%s)\n", item.Name, formatSize(item.Size))
-		fmt.Printf("下载链接: %s\n", url)
-		fmt.Println()
+		fmt.Printf("File: %s (%s)\n", item.Name, formatSize(item.Size))
+		fmt.Printf("Download URL: %s\n\n", url)
 		fmt.Println(generateQRASCII(url))
 	}
 
-	// Start server to serve the files
 	mux := http.NewServeMux()
 	app.SetupRoutes(mux)
 
@@ -203,13 +216,12 @@ func sendFile(port int, pin string, useTLS bool, files []string) {
 		handler = app.pin.Middleware(mux)
 	}
 
-	listenAddr := fmt.Sprintf("0.0.0.0:%d", actualPort)
-	fmt.Printf("等待接收方下载... (Ctrl+C 退出)\n")
-
 	server := &http.Server{
-		Addr:    listenAddr,
+		Addr:    fmt.Sprintf("0.0.0.0:%d", actualPort),
 		Handler: handler,
 	}
+
+	fmt.Println("Waiting for downloads... (Ctrl+C to stop)")
 	if useTLS {
 		cert, _ := generateSelfSignedCert()
 		server.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
@@ -229,7 +241,7 @@ func sendText(port int, pin string, useTLS bool, text string) {
 	addr := fmt.Sprintf("%s:%d", localIP, actualPort)
 
 	app := NewApp(addr, pin)
-	app.mdns = NewMDNSManager(actualPort, app.broker)
+	app.mdns = NewMDNSManager(actualPort, app.broker, app.hostname)
 
 	item, err := app.store.AddText(text)
 	if err != nil {
@@ -242,12 +254,10 @@ func sendText(port int, pin string, useTLS bool, text string) {
 	}
 
 	url := fmt.Sprintf("%s://%s/recv/%s", scheme, addr, item.Token)
-	fmt.Printf("文本已就绪 (%d 字节)\n", item.Size)
-	fmt.Printf("获取链接: %s\n", url)
-	fmt.Println()
+	fmt.Printf("Text ready (%s)\n", formatSize(item.Size))
+	fmt.Printf("Fetch URL: %s\n\n", url)
 	fmt.Println(generateQRASCII(url))
 
-	// Start server with PIN and TLS support
 	mux := http.NewServeMux()
 	app.SetupRoutes(mux)
 
@@ -256,13 +266,12 @@ func sendText(port int, pin string, useTLS bool, text string) {
 		handler = app.pin.Middleware(mux)
 	}
 
-	listenAddr := fmt.Sprintf("0.0.0.0:%d", actualPort)
-	fmt.Printf("等待接收方获取... (Ctrl+C 退出)\n")
-
 	server := &http.Server{
-		Addr:    listenAddr,
+		Addr:    fmt.Sprintf("0.0.0.0:%d", actualPort),
 		Handler: handler,
 	}
+
+	fmt.Println("Waiting for receivers... (Ctrl+C to stop)")
 	if useTLS {
 		cert, _ := generateSelfSignedCert()
 		server.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
@@ -274,192 +283,179 @@ func sendText(port int, pin string, useTLS bool, text string) {
 
 func listDevices() {
 	broker := NewSSEBroker()
-	mdns := NewMDNSManager(0, broker)
+	mdns := NewMDNSManager(0, broker, "")
 
-	fmt.Println("正在扫描局域网内的 LAN Drop 设备...")
+	fmt.Println("Scanning for LAN Drop devices...")
 	if err := mdns.Start(); err != nil {
-		log.Fatalf("mDNS 启动失败: %v", err)
+		log.Fatalf("mDNS discovery failed: %v", err)
 	}
 
-	// Wait for discovery
 	time.Sleep(5 * time.Second)
 	devices := mdns.GetDevices()
 	mdns.Stop()
 
 	if len(devices) == 0 {
-		fmt.Println("未发现其他 LAN Drop 设备")
+		fmt.Println("No LAN Drop devices found")
 		return
 	}
 
-	fmt.Printf("\n发现 %d 个设备:\n", len(devices))
+	fmt.Printf("\nFound %d device(s):\n", len(devices))
 	for _, d := range devices {
-		fmt.Printf("  %s (%s) - %s\n", d.Name, d.OS, d.Addr)
+		status := "offline"
+		if d.Online {
+			status = "online"
+		}
+		fmt.Printf("  %s (%s) - %s [%s]\n", d.Name, d.OS, d.Addr, status)
 	}
 }
 
 func recvMode(saveDir string, pin string, useTLS bool, cont bool, target string) {
-	// Ensure save directory exists
-	if err := os.MkdirAll(saveDir, 0755); err != nil {
-		log.Fatalf("无法创建保存目录: %v", err)
+	if err := os.MkdirAll(saveDir, 0o755); err != nil {
+		log.Fatalf("cannot create save directory: %v", err)
 	}
 	absDir, _ := filepath.Abs(saveDir)
-	fmt.Printf("接收模式已启动，文件将保存到: %s\n", absDir)
+	fmt.Printf("Receiving into: %s\n", absDir)
 
-	if target != "" {
-		pollAndSave(target, absDir, pin, useTLS, cont)
-		return
-	}
-
-	fmt.Println("正在扫描局域网内的 LAN Drop 设备...")
-
-	broker := NewSSEBroker()
-	mdns := NewMDNSManager(0, broker)
-	if err := mdns.Start(); err != nil {
-		log.Printf("mDNS 启动失败: %v", err)
-	}
-
-	// Wait for discovery then poll
-	time.Sleep(3 * time.Second)
-	devices := mdns.GetDevices()
-
-	if len(devices) == 0 {
-		fmt.Println("未发现设备，请手动输入设备地址（如 192.168.1.10:53217）:")
-		var addr string
-		fmt.Scanln(&addr)
-		if addr != "" {
-			pollAndSave(addr, absDir, pin, useTLS, cont)
+	addr := target
+	if addr == "" {
+		var err error
+		addr, err = promptForTargetAddress()
+		if err != nil {
+			log.Fatalf("failed to choose target device: %v", err)
 		}
-		return
 	}
 
-	fmt.Printf("发现 %d 个设备:\n", len(devices))
-	for i, d := range devices {
-		fmt.Printf("  [%d] %s (%s)\n", i+1, d.Name, d.Addr)
-	}
-	fmt.Print("选择设备编号: ")
-	var choice int
-	fmt.Scanln(&choice)
-	if choice < 1 || choice > len(devices) {
-		fmt.Println("无效选择")
-		return
+	pollAndSave(addr, absDir, pin, useTLS, cont)
+}
+
+func historyStatusFromError(err error) string {
+	if err == nil {
+		return "success"
 	}
 
-	pollAndSave(devices[choice-1].Addr, absDir, pin, useTLS, cont)
+	var interrupted interruptedDownloadError
+	if errors.As(err, &interrupted) {
+		return "interrupted"
+	}
+
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "unexpected eof"),
+		strings.Contains(msg, "connection reset"),
+		strings.Contains(msg, "broken pipe"),
+		strings.Contains(msg, "closed network connection"),
+		strings.Contains(msg, "context canceled"),
+		strings.Contains(msg, "timeout"):
+		return "interrupted"
+	default:
+		return "failed"
+	}
+}
+
+func appendRecvHistory(name string, size int64, itemType string, status string, peer string) {
+	AppendHistory(&HistoryRecord{
+		Direction: "recv",
+		Name:      name,
+		Size:      size,
+		Type:      itemType,
+		Status:    status,
+		Peer:      peer,
+	})
 }
 
 func pollAndSave(addr string, saveDir string, pin string, useTLS bool, cont bool) {
-	fmt.Printf("连接到 %s，等待文件...\n", addr)
+	fmt.Printf("Connecting to %s and waiting for content...\n", addr)
+
 	scheme := "http"
 	if useTLS {
 		scheme = "https"
 	}
 	baseURL := scheme + "://" + addr
+	client := newHTTPClient(useTLS)
 
-	client := &http.Client{}
-	if useTLS {
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
-
-	// Connect to SSE for real-time notifications
-	req, _ := http.NewRequest("GET", baseURL+"/events", nil)
+	req, _ := http.NewRequest(http.MethodGet, baseURL+"/events", nil)
 	if pin != "" {
 		req.Header.Set("X-LanDrop-PIN", pin)
 	}
+
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatalf("连接失败: %v", err)
+		log.Fatalf("connection failed: %v", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		log.Fatalf("连接失败: HTTP %d (可能需要 PIN)", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		log.Fatalf("connection failed: HTTP %d (PIN may be required)", resp.StatusCode)
 	}
 
-	fmt.Println("已连接，等待接收... (Ctrl+C 退出)")
+	fmt.Println("Connected. Waiting for incoming transfers... (Ctrl+C to stop)")
 
-	// Proper SSE parsing: read line-by-line, accumulate event type + data
 	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB max line
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	var eventType, eventData string
 
 	for scanner.Scan() {
 		line := scanner.Text()
 
 		if line == "" {
-			// Empty line = end of event, dispatch
 			if eventType == "file_ready" && eventData != "" {
 				var event struct {
-					Token string `json:"token"`
-					Name  string `json:"name"`
-					Size  int64  `json:"size"`
-					Type  string `json:"type"`
+					Token   string `json:"token"`
+					Name    string `json:"name"`
+					Size    int64  `json:"size"`
+					Type    string `json:"type"`
+					OneTime bool   `json:"one_time"`
 				}
 				if err := json.Unmarshal([]byte(eventData), &event); err == nil {
-					if event.Type == "text" {
-						textReq, _ := http.NewRequest("GET", baseURL+"/recv/"+event.Token, nil)
+					switch event.Type {
+					case "text":
+						textReq, _ := http.NewRequest(http.MethodGet, baseURL+"/recv/"+event.Token, nil)
 						if pin != "" {
 							textReq.Header.Set("X-LanDrop-PIN", pin)
 						}
+
 						textResp, err := client.Do(textReq)
 						if err != nil {
-							fmt.Printf("获取文本失败: %v\n", err)
-						} else {
-							if textResp.StatusCode != http.StatusOK {
-								var apiErr struct {
-									Error string `json:"error"`
-								}
-								_ = json.NewDecoder(textResp.Body).Decode(&apiErr)
-								textResp.Body.Close()
-								msg := apiErr.Error
-								if msg == "" {
-									msg = fmt.Sprintf("HTTP %d", textResp.StatusCode)
-								}
-								fmt.Printf("获取文本失败: %s\n", msg)
-								AppendHistory(&HistoryRecord{
-									Direction: "recv",
-									Name:      event.Name,
-									Size:      event.Size,
-									Type:      "text",
-									Status:    "failed",
-									Peer:      addr,
-								})
-								continue
-							}
-
-							var textData struct {
-								Content string `json:"content"`
-							}
-							if err := json.NewDecoder(textResp.Body).Decode(&textData); err != nil {
-								textResp.Body.Close()
-								fmt.Printf("解析文本响应失败: %v\n", err)
-								AppendHistory(&HistoryRecord{
-									Direction: "recv",
-									Name:      event.Name,
-									Size:      event.Size,
-									Type:      "text",
-									Status:    "failed",
-									Peer:      addr,
-								})
-								continue
-							}
-							textResp.Body.Close()
-							fmt.Printf("\n收到文本 (%s):\n%s\n", formatSize(event.Size), textData.Content)
-
-							AppendHistory(&HistoryRecord{
-								Direction: "recv",
-								Name:      event.Name,
-								Size:      event.Size,
-								Type:      "text",
-								Status:    "success",
-								Peer:      addr,
-							})
+							status := historyStatusFromError(err)
+							fmt.Printf("text receive failed: %v\n", err)
+							appendRecvHistory(event.Name, event.Size, "text", status, addr)
+							goto resetEvent
 						}
-					} else {
-						fmt.Printf("\n收到文件: %s (%s)\n", event.Name, formatSize(event.Size))
+
+						if textResp.StatusCode != http.StatusOK {
+							var apiErr struct {
+								Error string `json:"error"`
+							}
+							_ = json.NewDecoder(textResp.Body).Decode(&apiErr)
+							_ = textResp.Body.Close()
+							msg := apiErr.Error
+							if msg == "" {
+								msg = fmt.Sprintf("HTTP %d", textResp.StatusCode)
+							}
+							fmt.Printf("text receive failed: %s\n", msg)
+							appendRecvHistory(event.Name, event.Size, "text", "failed", addr)
+							goto resetEvent
+						}
+
+						var textData struct {
+							Content string `json:"content"`
+						}
+						if err := json.NewDecoder(textResp.Body).Decode(&textData); err != nil {
+							_ = textResp.Body.Close()
+							status := historyStatusFromError(err)
+							fmt.Printf("failed to decode text response: %v\n", err)
+							appendRecvHistory(event.Name, event.Size, "text", status, addr)
+							goto resetEvent
+						}
+						_ = textResp.Body.Close()
+
+						fmt.Printf("\nReceived text (%s):\n%s\n", formatSize(event.Size), textData.Content)
+						appendRecvHistory(event.Name, event.Size, "text", "success", addr)
+
+					default:
+						fmt.Printf("\nReceived file: %s (%s)\n", event.Name, formatSize(event.Size))
 						savePath := filepath.Join(saveDir, sanitizeFilename(event.Name))
-						dlReq, _ := http.NewRequest("GET", baseURL+"/recv/"+event.Token, nil)
+						dlReq, _ := http.NewRequest(http.MethodGet, baseURL+"/recv/"+event.Token, nil)
 						if pin != "" {
 							dlReq.Header.Set("X-LanDrop-PIN", pin)
 						}
@@ -467,60 +463,36 @@ func pollAndSave(addr string, saveDir string, pin string, useTLS bool, cont bool
 						var startByte int64
 						if cont {
 							if info, err := os.Stat(savePath); err == nil {
-								if info.Size() > event.Size {
-									fmt.Printf("续传失败: 本地文件大于远端文件，请先处理现有文件 %s\n", savePath)
-									AppendHistory(&HistoryRecord{
-										Direction: "recv",
-										Name:      event.Name,
-										Size:      event.Size,
-										Type:      "file",
-										Status:    "failed",
-										Peer:      addr,
-									})
-									continue
+								switch {
+								case info.Size() > event.Size:
+									fmt.Printf("resume rejected: local file is larger than remote file: %s\n", savePath)
+									appendRecvHistory(event.Name, event.Size, "file", "failed", addr)
+									goto resetEvent
+								case info.Size() == event.Size:
+									fmt.Printf("file already complete, skipping download: %s\n", savePath)
+									appendRecvHistory(event.Name, event.Size, "file", "success", addr)
+									goto resetEvent
+								default:
+									startByte = info.Size()
+									dlReq.Header.Set("Range", fmt.Sprintf("bytes=%d-", startByte))
 								}
-								if info.Size() == event.Size {
-									fmt.Printf("文件已完整存在，跳过下载: %s\n", savePath)
-									AppendHistory(&HistoryRecord{
-										Direction: "recv",
-										Name:      event.Name,
-										Size:      event.Size,
-										Type:      "file",
-										Status:    "success",
-										Peer:      addr,
-									})
-									continue
-								}
-								startByte = info.Size()
-								dlReq.Header.Set("Range", fmt.Sprintf("bytes=%d-", startByte))
 							}
 						}
 
 						savePath, err = downloadFileWithClient(client, dlReq, savePath, startByte)
 						if err != nil {
-							fmt.Printf("下载失败: %v\n", err)
-							AppendHistory(&HistoryRecord{
-								Direction: "recv",
-								Name:      event.Name,
-								Size:      event.Size,
-								Type:      "file",
-								Status:    "failed",
-								Peer:      addr,
-							})
+							status := historyStatusFromError(err)
+							fmt.Printf("download failed: %v\n", err)
+							appendRecvHistory(event.Name, event.Size, "file", status, addr)
 						} else {
-							fmt.Printf("已保存到: %s\n", savePath)
-							AppendHistory(&HistoryRecord{
-								Direction: "recv",
-								Name:      event.Name,
-								Size:      event.Size,
-								Type:      "file",
-								Status:    "success",
-								Peer:      addr,
-							})
+							fmt.Printf("saved to: %s\n", savePath)
+							appendRecvHistory(event.Name, event.Size, "file", "success", addr)
 						}
 					}
 				}
 			}
+
+		resetEvent:
 			eventType = ""
 			eventData = ""
 			continue
@@ -535,8 +507,9 @@ func pollAndSave(addr string, saveDir string, pin string, useTLS bool, cont bool
 			eventData += strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		}
 	}
+
 	if err := scanner.Err(); err != nil {
-		log.Printf("连接中断: %v", err)
+		log.Printf("event stream interrupted: %v", err)
 	}
 }
 
@@ -546,7 +519,7 @@ func downloadFile(url string, savePath string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	_, err = saveDownload(resp.Body, savePath, false)
@@ -588,13 +561,14 @@ func saveDownload(src io.Reader, savePath string, isResume bool) (string, error)
 		}
 	}
 
-	var tempFile *os.File
-	var err error
-	var tempPath string
+	var (
+		tempFile *os.File
+		err      error
+		tempPath string
+	)
 
 	if isResume {
-		// Append to the existing file
-		tempFile, err = os.OpenFile(finalPath, os.O_APPEND|os.O_WRONLY, 0644)
+		tempFile, err = os.OpenFile(finalPath, os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
 			return "", err
 		}
@@ -614,7 +588,11 @@ func saveDownload(src io.Reader, savePath string, isResume bool) (string, error)
 		}
 	}()
 
-	if _, err := io.Copy(tempFile, src); err != nil {
+	written, err := io.Copy(tempFile, src)
+	if err != nil {
+		if written > 0 {
+			return "", interruptedDownloadError{err: err}
+		}
 		return "", err
 	}
 	if err := tempFile.Close(); err != nil {
@@ -650,28 +628,6 @@ func reserveDownloadPath(savePath string) (string, error) {
 			return "", err
 		}
 	}
-}
-
-func contains(s, sub string) bool {
-	return indexOf(s, sub) >= 0
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
-}
-
-func lastIndexOf(s, sub string) int {
-	for i := len(s) - len(sub); i >= 0; i-- {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
 
 func formatSize(bytes int64) string {
