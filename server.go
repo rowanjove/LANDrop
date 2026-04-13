@@ -122,7 +122,7 @@ func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
 
 	url := fmt.Sprintf("%s://%s", scheme, addr)
 	fmt.Println("╔════════════════════════════════════════╗")
-	fmt.Println("║           LAN Drop v1.0.0              ║")
+	fmt.Println("║           LAN Drop v1.1.0              ║")
 	fmt.Println("╠════════════════════════════════════════╣")
 	fmt.Printf("║  地址: %-31s ║\n", url)
 	if app.pin.IsEnabled() {
