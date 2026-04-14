@@ -19,7 +19,7 @@ import (
 var webUI embed.FS
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
 }
@@ -87,26 +87,12 @@ func (a *App) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /history", a.handleClearHistory)
 }
 
-func isMobile(ua string) bool {
-	ua = strings.ToLower(ua)
-	keywords := []string{"iphone", "android", "mobile", "ipad", "ipod", "webos", "opera mini"}
-	for _, kw := range keywords {
-		if strings.Contains(ua, kw) {
-			return true
-		}
-	}
-	return false
-}
-
 func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
 	page := "web/desktop.html"
-	if isMobile(r.UserAgent()) {
-		page = "web/mobile.html"
-	}
 	data, err := webUI.ReadFile(page)
 	if err != nil {
 		http.Error(w, "Web UI not found", http.StatusInternalServerError)
@@ -136,10 +122,10 @@ func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize+(64<<20))
-	// Parse multipart form, keep ≤32MB in memory, rest goes to temp files
+	// Parse multipart form, keep up to 32 MB in memory, rest goes to temp files.
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]interface{}{
-			"error": "文件过大，单次限制 2 GB",
+			"error": "File too large. Max 2 GB per transfer.",
 			"code":  "FILE_TOO_LARGE",
 		})
 		return
@@ -161,7 +147,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		fh := files[0]
 		if fh.Size > maxFileSize {
 			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]interface{}{
-				"error": "文件过大，单次限制 2 GB",
+				"error": "File too large. Max 2 GB per transfer.",
 				"code":  "FILE_TOO_LARGE",
 			})
 			return
@@ -169,7 +155,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		f, err := fh.Open()
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-				"error": "保存失败",
+				"error": "Failed to store upload.",
 				"code":  "UPLOAD_FAILED",
 			})
 			return
@@ -179,7 +165,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		item, err := a.store.AddFileFromReader(fh.Filename, f, fh.Size)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-				"error": "保存失败",
+				"error": "Failed to store upload.",
 				"code":  "UPLOAD_FAILED",
 			})
 			return
@@ -229,7 +215,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		totalSize += fh.Size
 		if totalSize > maxFileSize {
 			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]interface{}{
-				"error": "文件总大小超过 2 GB",
+				"error": "Total file size exceeds 2 GB.",
 				"code":  "FILE_TOO_LARGE",
 			})
 			return
@@ -238,7 +224,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		f, err := fh.Open()
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-				"error": "保存失败",
+				"error": "Failed to store upload.",
 				"code":  "UPLOAD_FAILED",
 			})
 			return
@@ -248,7 +234,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			f.Close()
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-				"error": "保存失败",
+				"error": "Failed to store upload.",
 				"code":  "UPLOAD_FAILED",
 			})
 			return
@@ -256,7 +242,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.Copy(zw, f); err != nil {
 			f.Close()
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-				"error": "保存失败",
+				"error": "Failed to store upload.",
 				"code":  "UPLOAD_FAILED",
 			})
 			return
@@ -265,7 +251,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := zipWriter.Close(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": "保存失败",
+			"error": "Failed to store upload.",
 			"code":  "UPLOAD_FAILED",
 		})
 		return
@@ -291,7 +277,7 @@ func (a *App) handleSendFile(w http.ResponseWriter, r *http.Request) {
 	item, err := a.store.AddTempFile(zipName, tmpPath, info.Size())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": "保存失败",
+			"error": "Failed to store upload.",
 			"code":  "UPLOAD_FAILED",
 		})
 		return
@@ -331,7 +317,7 @@ func (a *App) handleSendText(w http.ResponseWriter, r *http.Request) {
 
 	if len(req.Content) > maxTextSize {
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]interface{}{
-			"error": "文本过长，建议改用文件传输",
+			"error": "Text too large. Use file transfer instead.",
 			"code":  "TEXT_TOO_LARGE",
 		})
 		return
@@ -427,7 +413,7 @@ func (a *App) handleRecv(w http.ResponseWriter, r *http.Request) {
 
 	if unavailable {
 		writeJSON(w, http.StatusGone, map[string]interface{}{
-			"error": "该内容已被取走",
+			"error": "This item has already been claimed.",
 			"code":  "TOKEN_USED",
 		})
 		return
@@ -617,7 +603,7 @@ func (a *App) SendLocalFile(filePath string) (*TransferItem, error) {
 		return a.sendDirectory(absPath, info.Name())
 	}
 	if info.Size() > maxFileSize {
-		return nil, fmt.Errorf("文件过大，单次限制 2 GB")
+		return nil, fmt.Errorf("file too large: max 2 GB per transfer")
 	}
 	return a.store.AddFileFromPath(info.Name(), absPath, info.Size())
 }

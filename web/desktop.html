@@ -6,108 +6,246 @@
 <title>LAN Drop</title>
 <style>
 :root {
-  --bg: #f6f7fb;
-  --card: #ffffff;
+  --bg: #edf5ff;
+  --bg-2: #f8fbff;
+  --card: rgba(255, 255, 255, 0.84);
+  --panel: #f5f9ff;
   --fg: #17212b;
   --muted: #667085;
-  --bd: #d8dee8;
-  --pri: #2563eb;
+  --bd: rgba(117, 141, 168, 0.24);
+  --pri: #1565d8;
+  --pri-2: #0f8cda;
   --ok: #169c61;
   --warn: #c77b08;
   --err: #d64545;
+  --shadow: 0 22px 52px rgba(18, 38, 65, 0.12);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f172a;
-    --card: #162033;
+    --bg: #09111f;
+    --bg-2: #0d1830;
+    --card: rgba(11, 19, 34, 0.82);
+    --panel: rgba(20, 31, 51, 0.92);
     --fg: #e5edf7;
     --muted: #94a3b8;
-    --bd: #263244;
+    --bd: rgba(101, 127, 164, 0.28);
+    --shadow: 0 28px 60px rgba(0, 0, 0, 0.28);
   }
 }
 * { box-sizing: border-box; }
 body {
   margin: 0;
+  min-height: 100vh;
   font-family: "Segoe UI", system-ui, sans-serif;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at top left, rgba(21, 101, 216, 0.20), transparent 26rem),
+    radial-gradient(circle at top right, rgba(15, 140, 218, 0.14), transparent 18rem),
+    linear-gradient(180deg, var(--bg-2), var(--bg));
   color: var(--fg);
 }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 input, textarea, select {
   width: 100%;
-  padding: 0.72rem 0.85rem;
+  padding: 0.78rem 0.9rem;
   border: 1px solid var(--bd);
-  border-radius: 12px;
-  background: var(--bg);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.62);
   color: var(--fg);
+  outline: none;
+}
+@media (prefers-color-scheme: dark) {
+  input, textarea, select {
+    background: rgba(8, 15, 28, 0.76);
+  }
+}
+input:focus, textarea:focus, select:focus {
+  border-color: rgba(21, 101, 216, 0.45);
+  box-shadow: 0 0 0 4px rgba(21, 101, 216, 0.12);
 }
 textarea { min-height: 130px; resize: vertical; }
 nav {
   display: flex;
-  gap: 0.7rem;
+  flex-wrap: wrap;
+  gap: 0.9rem;
   align-items: center;
-  padding: 0.95rem 1rem;
-  border-bottom: 1px solid var(--bd);
-  background: var(--card);
+  justify-content: space-between;
+  width: min(1180px, calc(100% - 1.5rem));
+  margin: 0 auto;
+  padding: 0.9rem 0;
+}
+.topbar {
   position: sticky;
   top: 0;
   z-index: 20;
+  border-bottom: 1px solid var(--bd);
+  background: rgba(237, 245, 255, 0.78);
+  backdrop-filter: blur(18px);
+}
+@media (prefers-color-scheme: dark) {
+  .topbar {
+    background: rgba(9, 17, 31, 0.82);
+  }
+}
+.navbrand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.navbrand b {
+  font-size: 1.3rem;
+}
+.navmeta {
+  display: grid;
+  gap: 0.6rem;
+  flex: 1 1 20rem;
+}
+.meta-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  min-width: 0;
+  padding: 0.72rem 0.9rem;
+  border: 1px solid var(--bd);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+.meta-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  word-break: break-all;
+}
+.navactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+.navactions .btn {
+  min-width: 2.8rem;
+}
+.iconbtn {
+  width: 2.8rem;
+  padding: 0;
 }
 .wrap {
-  max-width: 1160px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 1rem 0 1.6rem;
+  width: min(1180px, calc(100% - 1.5rem));
 }
 .layout {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
-.span-2 { grid-column: span 2; }
+@media (min-width: 920px) {
+  .layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .span-2 { grid-column: span 2; }
+}
 .card {
   background: var(--card);
   border: 1px solid var(--bd);
-  border-radius: 16px;
-  padding: 1rem;
+  border-radius: 24px;
+  padding: 1.05rem;
+  box-shadow: var(--shadow);
+}
+.card h3 {
+  margin-top: 0;
+  margin-bottom: 0.3rem;
+}
+.sub {
+  margin: 0 0 0.8rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--muted);
 }
 .row {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.65rem;
   align-items: center;
   flex-wrap: wrap;
 }
 .sp { flex: 1; }
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.8rem;
   border: 1px solid var(--bd);
-  background: transparent;
+  background: rgba(255, 255, 255, 0.62);
   color: var(--fg);
-  padding: 0.58rem 0.95rem;
+  padding: 0 0.95rem;
   border-radius: 999px;
+  text-decoration: none;
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+@media (prefers-color-scheme: dark) {
+  .btn {
+    background: rgba(10, 17, 31, 0.72);
+  }
+}
+.btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(21, 101, 216, 0.34);
 }
 .pri {
-  background: var(--pri);
-  border-color: var(--pri);
+  background: linear-gradient(135deg, var(--pri), var(--pri-2));
+  border-color: transparent;
   color: #fff;
+  box-shadow: 0 16px 28px rgba(21, 101, 216, 0.24);
 }
 .err {
-  background: var(--err);
-  border-color: var(--err);
-  color: #fff;
+  background: rgba(214, 69, 69, 0.12);
+  border-color: rgba(214, 69, 69, 0.28);
+  color: var(--err);
 }
 .muted { color: var(--muted); }
-.hint { font-size: 0.84rem; color: var(--muted); }
+.hint { font-size: 0.84rem; color: var(--muted); line-height: 1.5; }
 .drop {
-  border: 2px dashed var(--bd);
-  border-radius: 14px;
-  padding: 1.25rem;
+  border: 1.5px dashed rgba(21, 101, 216, 0.28);
+  border-radius: 22px;
+  padding: 1.4rem 1rem;
+  min-height: 210px;
+  display: grid;
+  place-items: center;
   text-align: center;
+  background:
+    linear-gradient(180deg, rgba(21, 101, 216, 0.08), transparent 44%),
+    var(--panel);
+  transition: border-color 0.16s ease, transform 0.16s ease;
+}
+.drop:hover, .drop:focus-visible {
+  border-color: rgba(21, 101, 216, 0.52);
+  transform: translateY(-1px);
+}
+.drop strong {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 1.02rem;
 }
 .device, .recv, .hist {
   border: 1px solid var(--bd);
-  border-radius: 12px;
-  padding: 0.8rem;
-  margin-top: 0.6rem;
+  border-radius: 18px;
+  padding: 0.95rem;
+  margin-top: 0.75rem;
+  background: var(--panel);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+.device {
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+.device:hover {
+  transform: translateY(-1px);
+  border-color: rgba(21, 101, 216, 0.34);
 }
 .dot {
   display: inline-block;
@@ -123,103 +261,167 @@ nav {
   display: none;
   white-space: pre-wrap;
   word-break: break-word;
-  margin-top: 0.45rem;
-  padding: 0.65rem;
-  border-radius: 10px;
-  background: var(--bg);
+  margin-top: 0.55rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 14px;
+  background: rgba(21, 101, 216, 0.08);
+}
+.full a {
+  color: var(--pri);
+  word-break: break-all;
 }
 .full.show { display: block; }
 .bar {
-  height: 8px;
-  background: var(--bd);
+  height: 10px;
+  background: rgba(117, 141, 168, 0.24);
   border-radius: 999px;
   overflow: hidden;
-  margin-top: 0.55rem;
+  margin-top: 0.65rem;
 }
-.fill { height: 100%; background: var(--pri); width: 0; }
+.fill { height: 100%; background: linear-gradient(90deg, var(--pri), var(--pri-2)); width: 0; }
 .toastbox {
   position: fixed;
   right: 1rem;
   bottom: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.55rem;
   z-index: 40;
+  pointer-events: none;
 }
 .toast {
   background: var(--card);
   border: 1px solid var(--bd);
-  padding: 0.75rem 0.9rem;
-  border-radius: 12px;
+  padding: 0.8rem 0.9rem;
+  border-radius: 16px;
   max-width: 340px;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
 }
 .banner {
   display: none;
-  padding: 0.8rem;
-  border: 1px solid var(--warn);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--warn) 10%, var(--card));
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(199, 123, 8, 0.32);
+  border-radius: 20px;
+  background: rgba(199, 123, 8, 0.12);
   margin-bottom: 1rem;
 }
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(4, 10, 20, 0.48);
   display: none;
   align-items: center;
   justify-content: center;
   z-index: 50;
+  padding: 1rem;
 }
 .modal.show { display: flex; }
 .sheet {
-  width: min(420px, 92vw);
+  width: min(420px, 100%);
   background: var(--card);
   border: 1px solid var(--bd);
-  border-radius: 16px;
+  border-radius: 24px;
   padding: 1rem;
+  box-shadow: var(--shadow);
 }
 .count { font-size: 0.82rem; }
 .chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 700;
 }
-.okc { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, var(--card)); }
-.erc { color: var(--err); background: color-mix(in srgb, var(--err) 12%, var(--card)); }
-.inc { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--card)); }
-@media (max-width: 860px) {
-  .layout { grid-template-columns: 1fr; }
-  .span-2 { grid-column: auto; }
+.okc { color: var(--ok); background: rgba(22, 156, 97, 0.12); }
+.erc { color: var(--err); background: rgba(214, 69, 69, 0.12); }
+.inc { color: var(--warn); background: rgba(199, 123, 8, 0.14); }
+@media (min-width: 720px) {
+  .navmeta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 919px) {
+  .received { order: 3; }
+  .devices { order: 4; }
+  .history { order: 5; }
+  .scan { order: 6; }
+}
+@media (max-width: 680px) {
+  nav {
+    width: min(100% - 1rem, 1180px);
+    padding: 0.8rem 0;
+  }
+  .wrap {
+    width: min(100% - 1rem, 1180px);
+    padding-top: 0.9rem;
+  }
+  .row.stack-sm > * {
+    flex: 1 1 100%;
+  }
+  .row.stack-sm .btn {
+    width: 100%;
+  }
+  .navactions {
+    width: 100%;
+  }
+  .navactions .btn:not(.iconbtn) {
+    flex: 1 1 6rem;
+  }
+  .card {
+    padding: 1rem;
+  }
+  .drop {
+    min-height: 185px;
+  }
   .toastbox {
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-    width: min(92vw, 360px);
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 0.5rem;
+  }
+  .toast {
+    max-width: none;
   }
 }
 </style>
 </head>
 <body>
-<nav>
-  <b>LAN Drop</b>
-  <span id="dev" class="muted"></span>
-  <span id="addr" class="muted" style="font-family:Consolas,monospace"></span>
-  <span class="sp"></span>
-  <button id="langBtn" class="btn" onclick="toggleLang()">EN</button>
-  <button class="btn" onclick="openSettings()" aria-label="Settings">&#9881;</button>
-  <button class="btn" onclick="pullClipboard()" aria-label="Clipboard">&#128203;</button>
-</nav>
+<div class="topbar">
+  <nav>
+    <div class="navbrand">
+      <b>LAN Drop</b>
+      <span class="muted" data-i18n="tag">Local network dropbox</span>
+    </div>
+
+    <div class="navmeta">
+      <div class="meta-pill">
+        <span class="meta-label muted" data-i18n="device">Device</span>
+        <span id="dev"></span>
+      </div>
+      <div class="meta-pill mono">
+        <span class="meta-label muted" data-i18n="addrlabel">Address</span>
+        <span id="addr"></span>
+      </div>
+    </div>
+
+    <div class="navactions">
+      <button id="langBtn" class="btn" onclick="toggleLang()">EN</button>
+      <button class="btn iconbtn" onclick="pullClipboard()" aria-label="Clipboard">&#128203;</button>
+      <button class="btn iconbtn" onclick="openSettings()" aria-label="Settings">&#9881;</button>
+    </div>
+  </nav>
+</div>
 
 <div class="wrap">
   <div id="banner" class="banner"></div>
 
   <div class="layout">
-    <div class="card">
+    <div class="card send-file">
       <h3 data-i18n="sf">Send File</h3>
-      <div id="drop" class="drop" onclick="fileInput.click()" ondragover="dragState(event, true)" ondragleave="dragState(event, false)" ondrop="dropFiles(event)">
-        <div data-i18n="dh">Drop files here, or click to choose</div>
+      <p class="sub" data-i18n="sfh">Drag files in on desktop, or tap to pick from your phone.</p>
+      <div id="drop" class="drop" tabindex="0" role="button" onclick="document.getElementById('fileInput').click()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();document.getElementById('fileInput').click();}" ondragover="dragState(event, true)" ondragleave="dragState(event, false)" ondrop="dropFiles(event)">
+        <strong data-i18n="dh">Drop files here, or click to choose</strong>
         <div class="hint" data-i18n="mx">Max 2 GB</div>
       </div>
       <input id="fileInput" type="file" multiple hidden onchange="uploadFiles(this.files)">
@@ -230,10 +432,11 @@ nav {
       <div id="fileResult" style="display:none"></div>
     </div>
 
-    <div class="card">
+    <div class="card send-text">
       <h3 data-i18n="st">Send Text</h3>
+      <p class="sub" data-i18n="sth">Quick for notes, commands, links, or one-off snippets.</p>
       <textarea id="textInput" rows="6" data-i18n-placeholder="ph"></textarea>
-      <div class="row" style="margin-top:0.55rem">
+      <div class="row stack-sm" style="margin-top:0.55rem">
         <span id="charCount" class="count muted">0 B</span>
         <span class="sp"></span>
         <button id="sendTextBtn" class="btn pri" onclick="sendText()" disabled data-i18n="send">Send</button>
@@ -241,48 +444,53 @@ nav {
       <div id="textResult" style="display:none"></div>
     </div>
 
-    <div class="card">
+    <div class="card devices">
       <h3 data-i18n="dv">LAN Devices</h3>
+      <p class="sub" data-i18n="dvh">Devices on the same network appear here automatically.</p>
       <div id="deviceList"></div>
-      <div class="row" style="margin-top:0.65rem">
+      <div class="row stack-sm" style="margin-top:0.65rem">
         <input id="manualAddr" data-i18n-placeholder="manual" placeholder="IP:Port">
         <button class="btn" onclick="connectManual()" data-i18n="conn">Connect</button>
       </div>
     </div>
 
-    <div class="card">
+    <div class="card received">
       <h3 data-i18n="rc">Received</h3>
+      <p class="sub" data-i18n="rch">New items show up live while this page stays open.</p>
       <div id="recvList"></div>
       <div id="recvEmpty" class="muted" data-i18n="none">No content yet</div>
     </div>
 
-    <div class="card">
+    <div class="card scan">
       <h3 data-i18n="qr">Scan</h3>
+      <p class="sub" data-i18n="qrh">Open this page on another device or scan the QR code.</p>
       <div style="text-align:center">
-        <img src="/qr?size=180" alt="QR" style="max-width:180px;width:100%">
-        <div class="hint" data-i18n="qrh">Open this page on another device or scan the QR code.</div>
+        <img src="/qr?size=180" alt="QR" style="max-width:180px;width:100%;padding:0.75rem;border-radius:20px;background:#fff;box-shadow:0 16px 26px rgba(18,38,65,0.14)">
       </div>
     </div>
 
-    <div class="card">
+    <div class="card history">
       <div class="row">
         <h3 style="margin:0" data-i18n="hist">History</h3>
         <span id="historyCount" class="count muted">(0)</span>
         <span class="sp"></span>
         <button class="btn" onclick="loadHistory()" data-i18n="reload">Reload</button>
       </div>
-      <div class="row" style="margin:0.55rem 0">
+      <p class="sub" data-i18n="hsth">Filter recent transfers by day or device.</p>
+      <div class="row stack-sm" style="margin:0.55rem 0">
         <input id="historyDate" type="date" onchange="renderHistory()">
         <select id="historyPeer" onchange="renderHistory()"></select>
       </div>
-      <div class="row" style="margin-bottom:0.35rem">
+      <div class="row stack-sm" style="margin-bottom:0.35rem">
         <button class="btn" onclick="resetHistoryFilters()" data-i18n="reset">Reset</button>
         <button class="btn err" onclick="clearHistory()" data-i18n="clr">Clear</button>
       </div>
       <div id="historyList"></div>
     </div>
 
-    <div class="card span-2">
+    <div class="card span-2 footnote">
+      <h3 data-i18n="cli">CLI Companion</h3>
+      <p class="sub" data-i18n="clih">Keep receiving files or sync clipboard from the terminal.</p>
       <div class="hint" style="font-family:Consolas,monospace">
         CLI: landrop recv . --continue | landrop clipboard watch --target 192.168.1.10:53217
       </div>
@@ -295,7 +503,7 @@ nav {
     <h3 data-i18n="set">Settings</h3>
     <div class="hint" data-i18n="dn">Device Name</div>
     <input id="settingsName">
-    <div class="row" style="margin-top:0.8rem">
+    <div class="row stack-sm" style="margin-top:0.8rem">
       <span class="sp"></span>
       <button class="btn" onclick="closeSettings()" data-i18n="cancel">Cancel</button>
       <button class="btn pri" onclick="saveSettings()" data-i18n="save">Save</button>
@@ -308,16 +516,24 @@ nav {
 <script>
 const I = {
   zh: {
+    tag: '\u5c40\u57df\u7f51\u5feb\u901f\u4f20\u9012',
+    device: '\u8bbe\u5907',
+    addrlabel: '\u5730\u5740',
     sf: '\u53d1\u9001\u6587\u4ef6',
+    sfh: '\u7535\u8111\u4e0a\u53ef\u4ee5\u76f4\u63a5\u62d6\u62fd\uff0c\u624b\u673a\u4e0a\u70b9\u4e00\u4e0b\u5c31\u80fd\u4ece\u76f8\u518c\u6216\u6587\u4ef6\u4e2d\u9009\u53d6\u3002',
     st: '\u53d1\u9001\u6587\u672c',
+    sth: '\u9002\u5408\u4f20\u4fbf\u7b7e\uff0c\u547d\u4ee4\u7247\u6bb5\uff0c\u94fe\u63a5\u548c\u4e34\u65f6\u5185\u5bb9\u3002',
     dh: '\u62d6\u62fd\u6587\u4ef6\u5230\u8fd9\u91cc\uff0c\u6216\u70b9\u51fb\u9009\u62e9',
     mx: '\u6700\u5927 2 GB',
     send: '\u53d1\u9001',
     dv: '\u5c40\u57df\u7f51\u8bbe\u5907',
+    dvh: '\u540c\u4e00\u5c40\u57df\u7f51\u5185\u7684 LAN Drop \u8bbe\u5907\u4f1a\u81ea\u52a8\u51fa\u73b0\u5728\u8fd9\u91cc\u3002',
     rc: '\u63a5\u6536\u5185\u5bb9',
+    rch: '\u4fdd\u6301\u9875\u9762\u6253\u5f00\u65f6\uff0c\u65b0\u5185\u5bb9\u4f1a\u5b9e\u65f6\u51fa\u73b0\u5728\u8fd9\u91cc\u3002',
     none: '\u6682\u65e0\u5185\u5bb9',
     conn: '\u8fde\u63a5',
     hist: '\u5386\u53f2\u8bb0\u5f55',
+    hsth: '\u6309\u65e5\u671f\u6216\u8bbe\u5907\u7b5b\u9009\u6700\u8fd1\u7684\u4f20\u8f93\u8bb0\u5f55\u3002',
     reload: '\u5237\u65b0',
     reset: '\u91cd\u7f6e',
     clr: '\u6e05\u7a7a',
@@ -327,13 +543,14 @@ const I = {
     save: '\u4fdd\u5b58',
     nf: '\u6536\u5230\u65b0\u6587\u4ef6',
     nt: '\u6536\u5230\u65b0\u6587\u672c',
+    filelabel: '\u6587\u4ef6',
     cb: '\u526a\u8d34\u677f\u5df2\u540c\u6b65',
     cbf: '\u62c9\u53d6\u526a\u8d34\u677f\u5931\u8d25',
     nod: '\u6682\u65e0\u5176\u4ed6\u8bbe\u5907\uff0c\u53ef\u624b\u52a8\u8fde\u63a5',
     oned: '\u5f53\u524d\u670d\u52a1\u5df2\u5f00\u542f\u4e00\u6b21\u6027\u4e0b\u8f7d\u6a21\u5f0f\uff1a\u65b0\u94fe\u63a5\u5728\u6210\u529f\u8bfb\u53d6\u4e00\u6b21\u540e\u5931\u6548\u3002',
     onen: '\u4e00\u6b21\u6027\u5185\u5bb9\uff1a\u6210\u529f\u8bfb\u53d6\u540e\u94fe\u63a5\u4f1a\u5931\u6548\u3002',
     onec: '\u8fd9\u662f\u4e00\u6b21\u6027\u5185\u5bb9\uff0c\u7ee7\u7eed\u4f1a\u6d88\u8017\u94fe\u63a5\u3002\u786e\u8ba4\u7ee7\u7eed\u5417\uff1f',
-    copy: '\u590d\u5236\u5168\u6587',
+    copy: '\u590d\u5236',
     copied: '\u5df2\u590d\u5236',
     open: '\u5c55\u5f00',
     close: '\u6536\u8d77',
@@ -349,6 +566,8 @@ const I = {
     manual: '\u624b\u52a8\u8f93\u5165 IP:Port',
     qrh: '\u5728\u53e6\u4e00\u53f0\u8bbe\u5907\u4e0a\u6253\u5f00\u672c\u9875\uff0c\u6216\u626b\u63cf\u4e8c\u7ef4\u7801\u3002',
     qr: '\u626b\u7801',
+    cli: 'CLI \u914d\u5408',
+    clih: '\u9700\u8981\u6301\u7eed\u63a5\u6536\u6587\u4ef6\u6216\u540c\u6b65\u526a\u8d34\u677f\u65f6\uff0c\u53ef\u4ee5\u76f4\u63a5\u7528\u7ec8\u7aef\u3002',
     online: '\u5728\u7ebf',
     last: '\u6700\u8fd1\u6d3b\u8dc3',
     just: '\u521a\u521a',
@@ -358,16 +577,24 @@ const I = {
     hclear: '\u5386\u53f2\u5df2\u6e05\u7a7a'
   },
   en: {
+    tag: 'Local network dropbox',
+    device: 'Device',
+    addrlabel: 'Address',
     sf: 'Send File',
+    sfh: 'Drag files in on desktop, or tap to pick from your phone.',
     st: 'Send Text',
+    sth: 'Quick for notes, commands, links, or one-off snippets.',
     dh: 'Drop files here, or click to choose',
     mx: 'Max 2 GB',
     send: 'Send',
     dv: 'LAN Devices',
+    dvh: 'Devices on the same network appear here automatically.',
     rc: 'Received',
+    rch: 'New items show up live while this page stays open.',
     none: 'No content yet',
     conn: 'Connect',
     hist: 'History',
+    hsth: 'Filter recent transfers by day or device.',
     reload: 'Reload',
     reset: 'Reset',
     clr: 'Clear',
@@ -377,13 +604,14 @@ const I = {
     save: 'Save',
     nf: 'New file',
     nt: 'New text',
+    filelabel: 'file',
     cb: 'Clipboard synced',
     cbf: 'Clipboard pull failed',
     nod: 'No devices found. Connect manually if needed.',
     oned: 'This server runs in one-time mode: new links expire after one successful read.',
     onen: 'One-time item: the link expires after a successful read.',
     onec: 'This is a one-time item. Continuing will consume the link. Continue?',
-    copy: 'Copy All',
+    copy: 'Copy',
     copied: 'Copied',
     open: 'Expand',
     close: 'Collapse',
@@ -399,6 +627,8 @@ const I = {
     manual: 'Enter IP:Port manually',
     qrh: 'Open this page on another device or scan the QR code.',
     qr: 'Scan',
+    cli: 'CLI Companion',
+    clih: 'Keep receiving files or sync clipboard from the terminal.',
     online: 'Online',
     last: 'Last active',
     just: 'just now',
@@ -416,6 +646,9 @@ let R = [];
 let H = [];
 let C = {};
 let E = null;
+let deviceTimer = null;
+let sentFileShare = null;
+let sentTextShare = null;
 const CLIENT_ID = Math.random().toString(36).slice(2);
 
 const t = (key) => (I[L] || I.en)[key] || key;
@@ -425,6 +658,7 @@ const esc = (s) => {
   d.textContent = s ?? '';
   return d.innerHTML;
 };
+const attr = (s) => esc(s).replace(/"/g, '&quot;');
 const fmtSize = (b) => b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' :
   b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' :
   b >= 1024 ? (b / 1024).toFixed(1) + ' KB' : (b || 0) + ' B';
@@ -449,10 +683,12 @@ function applyLang() {
   $('settingsName').value = S.name || 'LAN Drop';
   $('banner').style.display = S.one_time ? 'block' : 'none';
   $('banner').textContent = t('oned');
+  renderSentFileResult();
+  renderSentTextResult();
   renderDevices();
   renderRecv();
-  renderHistory();
   renderPeerFilter();
+  renderHistory();
 }
 
 function toast(msg) {
@@ -470,11 +706,14 @@ async function init() {
     S = await r.json();
     $('addr').textContent = location.host || S.addr || '';
     $('dev').textContent = S.name || 'LAN Drop';
+    $('settingsName').value = S.name || 'LAN Drop';
+    applyLang();
   } catch {}
   await loadHistory();
   connectSSE();
   loadDevices();
-  setInterval(loadDevices, 5000);
+  if (deviceTimer) clearInterval(deviceTimer);
+  deviceTimer = window.setInterval(loadDevices, 5000);
 }
 
 async function copyText(text) {
@@ -510,7 +749,9 @@ async function pullClipboard() {
 }
 
 function connectSSE() {
-  if (E) E.close();
+  if (E) {
+    E.close();
+  }
   E = new EventSource('/events');
   E.addEventListener('file_ready', (e) => {
     const d = JSON.parse(e.data);
@@ -529,12 +770,11 @@ function connectSSE() {
     applyLang();
   });
   E.addEventListener('done', () => loadHistory());
-  E.onerror = () => setTimeout(connectSSE, 3000);
 }
 
 function dragState(e, on) {
   e.preventDefault();
-  $('drop').style.borderColor = on ? 'var(--pri)' : 'var(--bd)';
+  $('drop').style.borderColor = on ? 'rgba(21, 101, 216, 0.52)' : 'rgba(21, 101, 216, 0.28)';
 }
 
 function dropFiles(e) {
@@ -543,6 +783,45 @@ function dropFiles(e) {
   if (e.dataTransfer.files.length) {
     uploadFiles(e.dataTransfer.files);
   }
+}
+
+function fileSummary(name, count) {
+  if (count > 1) {
+    return L === 'zh' ? `${count} \u4e2a\u6587\u4ef6` : `${count} files`;
+  }
+  return name || t('filelabel');
+}
+
+function renderSentFileResult() {
+  const el = $('fileResult');
+  if (!sentFileShare) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.style.display = 'block';
+  el.innerHTML =
+    `<div class="recv"><div><b>${esc(fileSummary(sentFileShare.name, sentFileShare.count))}</b> <span class="hint">(${fmtSize(sentFileShare.size)})</span></div>` +
+    `<div class="hint mono" style="margin-top:0.35rem">${esc(sentFileShare.url)}</div>` +
+    `<div class="row stack-sm" style="margin-top:0.45rem"><button class="btn pri" onclick='copyLink(${JSON.stringify(sentFileShare.url)}, this)'>${esc(t('copy'))}</button></div>` +
+    (S.one_time ? `<div class="note">${esc(t('onen'))}</div>` : '') +
+    `</div>`;
+}
+
+function renderSentTextResult() {
+  const el = $('textResult');
+  if (!sentTextShare) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.style.display = 'block';
+  el.innerHTML =
+    `<div class="recv"><div><b>${esc(t('saved'))}</b> <span class="hint">(${fmtSize(sentTextShare.length)})</span></div>` +
+    `<div class="hint mono" style="margin-top:0.35rem">${esc(sentTextShare.url)}</div>` +
+    `<div class="row stack-sm" style="margin-top:0.45rem"><button class="btn pri" onclick='copyLink(${JSON.stringify(sentTextShare.url)}, this)'>${esc(t('copy'))}</button></div>` +
+    (S.one_time ? `<div class="note">${esc(t('onen'))}</div>` : '') +
+    `</div>`;
 }
 
 async function uploadFiles(files) {
@@ -580,16 +859,17 @@ async function uploadFiles(files) {
       xhr.send(form);
     });
     const url = `${location.origin}/recv/${d.token}`;
-    $('fileResult').style.display = 'block';
-    $('fileResult').innerHTML =
-      `<div class="recv"><div>${esc(files.length > 1 ? files.length + ' files' : files[0].name)} (${fmtSize(d.size)})</div>` +
-      `<div class="hint" style="font-family:Consolas,monospace">${esc(url)}</div>` +
-      `<div class="row" style="margin-top:0.45rem"><button class="btn pri" onclick='copyLink(${JSON.stringify(url)}, this)'>${esc(t('copy'))}</button></div>` +
-      (S.one_time ? `<div class="note">${esc(t('onen'))}</div>` : '') +
-      `</div>`;
+    sentFileShare = {
+      count: files.length,
+      name: files[0] ? files[0].name : '',
+      size: d.size,
+      url
+    };
+    renderSentFileResult();
   } catch (e) {
     toast(e.message);
   }
+  $('fileInput').value = '';
   $('progress').style.display = 'none';
   $('fill').style.width = '0%';
 }
@@ -622,17 +902,16 @@ async function sendText() {
     if (!r.ok) throw new Error(d.error || 'send failed');
     C[d.token] = content;
     const url = `${location.origin}/recv/${d.token}`;
-    $('textResult').style.display = 'block';
-    $('textResult').innerHTML =
-      `<div class="recv"><div>${esc(t('saved'))} (${fmtSize(d.length)})</div>` +
-      `<div class="hint" style="font-family:Consolas,monospace">${esc(url)}</div>` +
-      `<div class="row" style="margin-top:0.45rem"><button class="btn pri" onclick='copyLink(${JSON.stringify(url)}, this)'>${esc(t('copy'))}</button></div>` +
-      (S.one_time ? `<div class="note">${esc(t('onen'))}</div>` : '') +
-      `</div>`;
+    sentTextShare = {
+      length: d.length,
+      url
+    };
+    renderSentTextResult();
   } catch (e) {
     toast(e.message);
   }
-  $('sendTextBtn').disabled = !$('textInput').value.trim();
+  const size = new Blob([$('textInput').value]).size;
+  $('sendTextBtn').disabled = !$('textInput').value.trim() || size > 10 * 1024 * 1024;
 }
 
 async function loadDevices() {
@@ -658,6 +937,14 @@ function relativeText(ts) {
   if (s < 3600) return `${Math.floor(s / 60)} ${t('min')}`;
   if (s < 86400) return `${Math.floor(s / 3600)} ${t('hour')}`;
   return `${Math.floor(s / 86400)} ${t('day')}`;
+}
+
+function localDateKey(ts) {
+  const d = new Date(Number(ts || 0) * 1000);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function toURL(addr) {
@@ -729,17 +1016,17 @@ function renderRecv() {
         note +
         `<div id="preview-${item.token}" class="hint"></div>` +
         `<div id="full-${item.token}" class="full"></div>` +
-        `<div class="row" style="margin-top:0.45rem">` +
+        `<div class="row stack-sm" style="margin-top:0.45rem">` +
         `<button class="btn pri" onclick='copyRecvText(${JSON.stringify(item.token)}, this)'>${esc(t('copy'))}</button>` +
         `<button id="toggle-${item.token}" class="btn" onclick='toggleRecvText(${JSON.stringify(item.token)})'>${esc(t('open'))}</button>` +
         `</div></div>`;
     }
     return `<div class="recv">` +
-      `<div><b>${esc(item.name || 'file')}</b></div>` +
+      `<div><b>${esc(item.name || t('filelabel'))}</b></div>` +
       `<div class="hint">${fmtSize(item.size)}</div>` +
       note +
-      `<div class="row" style="margin-top:0.45rem">` +
-      `<a class="btn pri" href="/recv/${item.token}" download="${esc(item.name || 'download')}" onclick='return confirmOneTime(${JSON.stringify(item.token)})'>${esc(t('down'))}</a>` +
+      `<div class="row stack-sm" style="margin-top:0.45rem">` +
+      `<a class="btn pri" href="/recv/${item.token}" download="${attr(item.name || t('filelabel'))}" onclick='return confirmOneTime(${JSON.stringify(item.token)})'>${esc(t('down'))}</a>` +
       `</div></div>`;
   }).join('');
   R.filter((x) => x.type === 'text').forEach(async (item) => {
@@ -792,7 +1079,7 @@ function renderPeerFilter() {
   const peers = [...new Set(H.map((x) => x.peer).filter(Boolean))].sort();
   const current = $('historyPeer').value;
   $('historyPeer').innerHTML = `<option value="">${esc(t('hs0'))}</option>` + peers.map((peer) =>
-    `<option value="${esc(peer)}">${esc(peer)}</option>`
+    `<option value="${attr(peer)}">${esc(peer)}</option>`
   ).join('');
   if (peers.includes(current)) $('historyPeer').value = current;
 }
@@ -808,7 +1095,7 @@ function renderHistory() {
   const peer = $('historyPeer').value;
   const items = H.filter((x) =>
     (!peer || x.peer === peer) &&
-    (!date || new Date((x.timestamp || 0) * 1000).toISOString().slice(0, 10) === date)
+    (!date || localDateKey(x.timestamp) === date)
   );
   $('historyList').innerHTML = items.length ? items.map((x) =>
     `<div class="hist">${statusChip(x.status)} <b>${esc(x.name || x.type)}</b>` +
@@ -862,6 +1149,11 @@ async function saveSettings() {
     toast(t('load'));
   }
 }
+
+window.addEventListener('beforeunload', () => {
+  if (deviceTimer) clearInterval(deviceTimer);
+  if (E) E.close();
+});
 
 init();
 </script>

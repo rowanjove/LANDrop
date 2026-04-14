@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestTransferStoreOneTimeClaimsAreExclusive(t *testing.T) {
 	ClearHistory()
@@ -60,5 +63,18 @@ func TestTransferStoreInterruptedOneTimeTransferReleasesClaim(t *testing.T) {
 	}
 	if got := records[len(records)-1].Status; got != "interrupted" {
 		t.Fatalf("latest history status = %q, want %q", got, "interrupted")
+	}
+}
+
+func TestAddTextRejectsLargePayloadWithCurrentLimit(t *testing.T) {
+	store := NewTransferStore()
+	defer store.Cleanup()
+
+	_, err := store.AddText(strings.Repeat("x", maxTextSize+1))
+	if err == nil {
+		t.Fatal("AddText() error = nil, want size validation failure")
+	}
+	if !strings.Contains(err.Error(), "10 MB") {
+		t.Fatalf("AddText() error = %q, want updated 10 MB limit message", err.Error())
 	}
 }

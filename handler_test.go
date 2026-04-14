@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -111,5 +113,66 @@ func TestHandleRecvOneTimeRangeResumeConsumesOnlyAfterEOF(t *testing.T) {
 	}
 	if _, ok := app.store.Get(item.Token); ok {
 		t.Fatal("expected one-time token to be removed after the resumed download reached EOF")
+	}
+}
+
+func TestHandleIndexServesSharedResponsivePageForAllUserAgents(t *testing.T) {
+	app := NewApp("", "")
+
+	render := func(ua string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("User-Agent", ua)
+		rec := httptest.NewRecorder()
+		app.handleIndex(rec, req)
+		return rec
+	}
+
+	desktop := render("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+	mobile := render("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
+
+	if desktop.Code != http.StatusOK || mobile.Code != http.StatusOK {
+		t.Fatalf("handleIndex() status desktop=%d mobile=%d, want %d", desktop.Code, mobile.Code, http.StatusOK)
+	}
+	if desktop.Body.String() != mobile.Body.String() {
+		t.Fatal("expected all devices to receive the same responsive HTML")
+	}
+	if got := desktop.Header().Get("Cache-Control"); got != "no-store, max-age=0" {
+		t.Fatalf("Cache-Control = %q, want %q", got, "no-store, max-age=0")
+	}
+	if !strings.Contains(desktop.Body.String(), "Local network dropbox") {
+		t.Fatal("expected shared page markup to include the responsive header copy")
+	}
+}
+
+func TestHandleSendTextRejectsOversizedContent(t *testing.T) {
+	app := NewApp("", "")
+
+	body, err := json.Marshal(map[string]string{
+		"content": strings.Repeat("a", maxTextSize+1),
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/send/text", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	app.handleSendText(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("handleSendText() status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+
+	var payload struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if payload.Code != "TEXT_TOO_LARGE" {
+		t.Fatalf("code = %q, want %q", payload.Code, "TEXT_TOO_LARGE")
+	}
+	if !strings.Contains(payload.Error, "Text too large") {
+		t.Fatalf("error = %q, want readable size guidance", payload.Error)
 	}
 }

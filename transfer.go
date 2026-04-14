@@ -225,7 +225,7 @@ func (s *TransferStore) AddFileFromPath(name string, srcPath string, size int64)
 
 func (s *TransferStore) AddText(content string) (*TransferItem, error) {
 	if len(content) > maxTextSize {
-		return nil, fmt.Errorf("text too large, max 1 MB")
+		return nil, fmt.Errorf("text too large, max 10 MB")
 	}
 	token := generateToken()
 	item := &TransferItem{
