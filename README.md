@@ -1,249 +1,103 @@
-# LAN Drop
+# LAN Drop — 局域网文件与文本分享
 
-Local network file, text, and clipboard sharing with a simple web UI and CLI.
+[简体中文](README.md) | [English](README.en.md)
 
-## 中文
+LAN Drop 是一个 Go 编写的局域网分享工具，用于在同一网络内传送文件、文本和剪贴板内容。它提供桌面与手机共用的 Web 界面，以及发送、接收和查看历史记录的命令行工具，不需要部署云端中转服务。
 
-### 简介
+[下载 v1.2.2](https://github.com/rowanjove/LANDrop/releases/tag/v1.2.2) · [报告问题](https://github.com/rowanjove/LANDrop/issues)
 
-LAN Drop 是一个基于 Go 的局域网分享工具，用来在同一网络内快速发送文件、文本和剪贴板内容。它同时提供：
+## 安装与开始分享
 
-- 一套响应式 Web UI，桌面和手机共用同一个页面
-- 用于发送和接收的 CLI 命令
-- 局域网设备发现
-- 一次性下载链接
-- PIN 保护和 HTTPS/TLS 支持
+Release 提供 Windows amd64、macOS amd64／arm64、Linux amd64／arm64 压缩包。下载对应平台版本，解压后在终端进入所在目录。
 
-### 功能特性
-
-- 文件分享：支持浏览器上传和 CLI 发送
-- 文本分享：支持链接生成、预览和复制
-- 剪贴板同步：Web UI 支持纯文本推送和拉取
-- 设备发现：通过 mDNS 在局域网内发现其他节点
-- 安全选项：支持 `--pin`、`--tls` 和 `--one-time`
-- 接收增强：支持手动目标地址、断点续传和传输历史
-- 跨平台：支持 Windows、macOS 和 Linux
-
-### 快速开始
-
-1. 启动服务
+macOS／Linux：
 
 ```bash
-landrop serve
+chmod +x landrop
+./landrop serve
 ```
 
-2. 在浏览器中打开输出的地址，或直接扫描二维码
+Windows PowerShell：
 
-3. 也可以直接使用 CLI
+```powershell
+.\landrop.exe serve
+```
+
+打开程序打印的地址，或在同一局域网的手机上扫描二维码。请允许必要的局域网防火墙访问，不要把服务端口转发到公网。
+
+下文以已将程序目录加入 PATH 后的 `landrop` 命令为例；未加入 PATH 时，使用上方的平台路径写法。
+
+## 支持的操作
+
+- 从浏览器上传文件，或用 CLI 发起分享。
+- 生成文本分享链接，在 Web 界面预览和复制。
+- 在 Web 界面推送与拉取纯文本剪贴板内容。
+- 通过 mDNS 发现同一局域网内的设备。
+- 可选 PIN、HTTPS/TLS 与一次性下载链接。
+- 手动指定目标地址、继续下载及本地传输历史。
+
+## 常用命令
 
 ```bash
+landrop serve --port 53217
 landrop send ./photo.jpg
 landrop send --text "hello from LAN Drop"
 landrop recv .
 ```
 
-### 常用命令
-
-```bash
-landrop serve --port 53217
-landrop serve --pin 1234
-landrop serve --tls
-landrop serve --one-time
-
-landrop send ./file.zip
-landrop send --text "hello"
-
-landrop recv .
-landrop recv . --pin 1234
-landrop recv . --tls
-landrop recv . --target 192.168.1.10:53217
-landrop recv . --continue --target 192.168.1.10:53217
-
-landrop history --limit 20
-landrop history --clear
-```
-
-### 高级安全
-
-如果你的局域网并不完全可信，可以同时开启 PIN 和 TLS 来保护传输：
+服务端启用 PIN 和 TLS 时，接收端应使用对应选项：
 
 ```bash
 landrop serve --pin 5231 --tls
+landrop recv . --pin 5231 --tls --target 192.168.1.10:53217
 ```
 
-启用 `--tls` 后，传输内容会进行端到端加密。
-
-> 提示：当前 TLS 默认使用临时生成的自签名证书。如果你不想看到浏览器证书警告，可以使用 [`mkcert`](https://github.com/FiloSottile/mkcert) 为本地局域网 IP 生成受信任证书；或者在浏览器的高级提示页中手动继续访问。
-
-### 一次性链接
-
-如果你希望分享链接只允许成功下载一次，可以这样启动：
-
-```bash
-landrop serve --one-time
-```
-
-Token 会在真正的下载完成后被消费，不会因为打开预览页面而失效。
-
-### CLI 额外能力
-
-如果 mDNS 发现不可用，可以直接连接已知设备地址：
-
-```bash
-landrop recv . --target 192.168.1.10:53217
-```
-
-如果下载被中断，可以继续写入同一路径：
+mDNS 不可用时，通过 `--target` 指定设备。继续写入同一路径的未完成下载：
 
 ```bash
 landrop recv . --continue --target 192.168.1.10:53217
 ```
 
-查看或清理本地传输历史：
+查看或清除本地历史：
 
 ```bash
 landrop history --limit 20
 landrop history --clear
 ```
 
-### 从源码运行
+`--clear` 会删除本地历史记录，执行前确认不再需要。
+
+## 一次性链接与安全边界
 
 ```bash
+landrop serve --one-time
+```
+
+一次性下载令牌在真实下载完成后消耗，打开预览页不会消耗令牌。
+
+TLS 用于客户端与 LAN Drop 服务之间的传输加密。当前服务生成临时自签名证书，浏览器会提示证书不受信任；部分 CLI HTTPS 请求跳过证书验证，因此不能仅凭 `--tls` 就假设获得了完整的服务器身份校验或中间人攻击防护。
+
+默认命令不自动启用 PIN 或 TLS。请在可信局域网中使用，按需启用访问保护，核对目标设备。当前命令没有提供直接加载自定义证书的选项，不应把生成本地证书理解为应用会自动使用它。
+
+## 从源码构建
+
+项目的 [go.mod](go.mod) 声明 Go **1.25.0**；使用兼容工具链。
+
+```bash
+git clone https://github.com/rowanjove/LANDrop.git
+cd LANDrop
 go test ./...
 go build -o landrop .
 ```
 
-### 发布说明
+Windows 可将最后一条替换为：
 
-GitHub Releases 提供以下预编译二进制：
-
-- Windows `amd64`
-- macOS `amd64` / `arm64`
-- Linux `amd64` / `arm64`
-
-### 许可证
-
-本项目基于 `MIT License` 开源，详见 [LICENSE](./LICENSE)。
-
-## English
-
-### Overview
-
-LAN Drop is a Go-based LAN sharing tool for quickly sending files, text, and clipboard content across devices on the same network. It includes:
-
-- A responsive web UI shared by desktop and mobile
-- CLI commands for sending and receiving
-- Local device discovery
-- One-time download links
-- PIN protection and HTTPS/TLS support
-
-### Features
-
-- File sharing from both browser and CLI
-- Text sharing with preview and copy support
-- Plain-text clipboard push and pull in the web UI
-- mDNS-based device discovery on the local network
-- Security options with `--pin`, `--tls`, and `--one-time`
-- Enhanced receiving with manual targets, resume, and transfer history
-- Cross-platform support for Windows, macOS, and Linux
-
-### Quick Start
-
-1. Start the server
-
-```bash
-landrop serve
+```powershell
+go build -o landrop.exe .
 ```
 
-2. Open the printed URL in a browser, or scan the QR code
+## 贡献与许可
 
-3. Or use the CLI directly
+通过 [Issues](https://github.com/rowanjove/LANDrop/issues) 提交问题时，说明操作系统、版本、发送与接收命令、网络环境及复现步骤，不要附私人文件或 PIN。代码改动提交前运行 `go test ./...`。
 
-```bash
-landrop send ./photo.jpg
-landrop send --text "hello from LAN Drop"
-landrop recv .
-```
-
-### Common Commands
-
-```bash
-landrop serve --port 53217
-landrop serve --pin 1234
-landrop serve --tls
-landrop serve --one-time
-
-landrop send ./file.zip
-landrop send --text "hello"
-
-landrop recv .
-landrop recv . --pin 1234
-landrop recv . --tls
-landrop recv . --target 192.168.1.10:53217
-landrop recv . --continue --target 192.168.1.10:53217
-
-landrop history --limit 20
-landrop history --clear
-```
-
-### Advanced Security
-
-If your local network is not fully trusted, you can protect transfers with both PIN and TLS:
-
-```bash
-landrop serve --pin 5231 --tls
-```
-
-With `--tls`, transfers are encrypted end-to-end.
-
-> Tip: TLS currently uses a temporary self-signed certificate. If you want to avoid browser warnings, you can use [`mkcert`](https://github.com/FiloSottile/mkcert) to generate a locally trusted certificate for your LAN IP, or proceed through the browser's advanced warning page.
-
-### One-Time Links
-
-To make a shared link valid for only one successful download:
-
-```bash
-landrop serve --one-time
-```
-
-The token is consumed when a real download completes, not when a preview page is opened.
-
-### CLI Extras
-
-If mDNS discovery is unavailable, connect directly to a known device:
-
-```bash
-landrop recv . --target 192.168.1.10:53217
-```
-
-To resume an interrupted download into the same local path:
-
-```bash
-landrop recv . --continue --target 192.168.1.10:53217
-```
-
-To inspect or clear the local transfer history:
-
-```bash
-landrop history --limit 20
-landrop history --clear
-```
-
-### Build From Source
-
-```bash
-go test ./...
-go build -o landrop .
-```
-
-### Releases
-
-GitHub Releases include prebuilt binaries for:
-
-- Windows `amd64`
-- macOS `amd64` / `arm64`
-- Linux `amd64` / `arm64`
-
-### License
-
-This project is released under the `MIT License`. See [LICENSE](./LICENSE).
+本项目采用 [MIT License](LICENSE)。
