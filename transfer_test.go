@@ -78,3 +78,73 @@ func TestAddTextRejectsLargePayloadWithCurrentLimit(t *testing.T) {
 		t.Fatalf("AddText() error = %q, want updated 10 MB limit message", err.Error())
 	}
 }
+
+func TestTransferStoreCleanupExpired(t *testing.T) {
+	store := NewTransferStore()
+	defer store.Cleanup()
+
+	item, err := store.AddText("expired text")
+	if err != nil {
+		t.Fatalf("AddText() error = %v", err)
+	}
+	item.ExpiresAt = 1 // Already in the past
+
+	cleaned := store.CleanupExpired()
+	if cleaned != 1 {
+		t.Fatalf("CleanupExpired() = %d, want 1", cleaned)
+	}
+
+	if _, ok := store.Get(item.Token); ok {
+		t.Fatal("expected expired token to be removed from store")
+	}
+}
+
+func TestTransferStoreCancel(t *testing.T) {
+	store := NewTransferStore()
+	defer store.Cleanup()
+
+	item, err := store.AddText("to be cancelled")
+	if err != nil {
+		t.Fatalf("AddText() error = %v", err)
+	}
+
+	item.Status = TransferStatusTransferring
+	ok := store.Cancel(item.Token)
+	if !ok {
+		t.Fatal("Cancel() = false, want true")
+	}
+
+	if _, ok := store.Get(item.Token); ok {
+		t.Fatal("expected cancelled token to be removed from active items")
+	}
+	if !store.IsCancelled(item.Token) {
+		t.Fatal("expected cancellation marker for an in-flight transfer")
+	}
+}
+
+func TestSanitizeFilename(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"normal.txt", "normal.txt"},
+		{"../../evil.sh", "evil.sh"},
+		{"..\\..\\evil.exe", "evil.exe"},
+		{"/root/etc/passwd", "passwd"},
+		{"CON.txt", "_CON.txt"},
+		{"aux", "_aux"},
+		{"NUL.tar.gz", "_NUL.tar.gz"},
+		{"", "unnamed"},
+		{".", "unnamed"},
+		{"..", "unnamed"},
+		{"hello\x00world.pdf", "helloworld.pdf"},
+		{"  spaced.doc  ", "spaced.doc"},
+	}
+
+	for _, c := range cases {
+		got := sanitizeFilename(c.input)
+		if got != c.want {
+			t.Errorf("sanitizeFilename(%q) = %q, want %q", c.input, got, c.want)
+		}
+	}
+}

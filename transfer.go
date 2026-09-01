@@ -14,30 +14,66 @@ import (
 )
 
 const (
-	maxFileSize     = 2 * 1024 * 1024 * 1024 // 2 GB
-	memoryThreshold = 100 * 1024 * 1024      // 100 MB
-	maxTextSize     = 10 * 1024 * 1024       // 10 MB
+	memoryThreshold = 1 * 1024 * 1024  // 1 MB: files <= 1MB in RAM, larger to disk
+	maxTextSize     = 10 * 1024 * 1024 // 10 MB max text
+	defaultTTL      = 3600             // 1 hour default TTL
 )
 
-type TransferItem struct {
-	Token      string `json:"token"`
-	Type       string `json:"type"` // "file" or "text"
-	Name       string `json:"name"`
-	Size       int64  `json:"size"`
-	Content    []byte `json:"-"`
-	FilePath   string `json:"-"`
-	CreatedAt  int64  `json:"created_at"`
-	ExpiresAt  int64  `json:"expires_at"`
-	Downloaded bool   `json:"downloaded"`
-	OneTimeUse bool   `json:"-"`
-	Claimed    bool   `json:"-"`
+type TransferStatus string
+
+const (
+	TransferStatusPending      TransferStatus = "pending"
+	TransferStatusReady        TransferStatus = "ready"
+	TransferStatusTransferring TransferStatus = "transferring"
+	TransferStatusCompleted    TransferStatus = "completed"
+	TransferStatusFailed       TransferStatus = "failed"
+	TransferStatusInterrupted  TransferStatus = "interrupted"
+	TransferStatusCancelled    TransferStatus = "cancelled"
+	TransferStatusExpired      TransferStatus = "expired"
+)
+
+type TransferFile struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Size     int64  `json:"size"`
+	MimeType string `json:"mime_type,omitempty"`
+	FilePath string `json:"-"`
+	Content  []byte `json:"-"`
 }
 
+type Transfer struct {
+	ID               string         `json:"id"`
+	Token            string         `json:"token"`
+	Direction        string         `json:"direction"` // "send" or "recv"
+	Type             string         `json:"type"`      // "file" or "text"
+	Name             string         `json:"name"`
+	Size             int64          `json:"size"`
+	Items            []TransferFile `json:"items,omitempty"`
+	CreatedAt        int64          `json:"created_at"`
+	ExpiresAt        int64          `json:"expires_at"` // Unix timestamp or 0
+	Status           TransferStatus `json:"status"`
+	Peer             string         `json:"peer,omitempty"`
+	BytesTransferred int64          `json:"bytes_transferred"`
+	DownloadLimit    int            `json:"download_limit,omitempty"`
+	DownloadCount    int            `json:"download_count,omitempty"`
+	Content          []byte         `json:"-"`
+	FilePath         string         `json:"-"`
+	OneTimeUse       bool           `json:"one_time,omitempty"`
+	Claimed          bool           `json:"-"`
+	Downloaded       bool           `json:"downloaded,omitempty"`
+}
+
+// Backward compatibility alias for TransferItem
+type TransferItem = Transfer
+
 type TransferStore struct {
-	mu      sync.RWMutex
-	items   map[string]*TransferItem
-	history []*TransferItem
-	tempDir string
+	mu             sync.RWMutex
+	items          map[string]*Transfer
+	history        []*Transfer
+	usedTokens     map[string]time.Time
+	cancelled      map[string]struct{}
+	cancelledFiles map[string][]string
+	tempDir        string
 }
 
 type DownloadOutcome int
@@ -52,27 +88,45 @@ const (
 func NewTransferStore() *TransferStore {
 	tmpDir, err := os.MkdirTemp("", "landrop-*")
 	if err != nil {
-		log.Fatalf("failed to create temp directory: %v", err)
+		log.Fatalf("创建临时目录失败：%v", err)
 	}
 	return &TransferStore{
-		items:   make(map[string]*TransferItem),
-		history: make([]*TransferItem, 0),
-		tempDir: tmpDir,
+		items:          make(map[string]*Transfer),
+		history:        make([]*Transfer, 0),
+		usedTokens:     make(map[string]time.Time),
+		cancelled:      make(map[string]struct{}),
+		cancelledFiles: make(map[string][]string),
+		tempDir:        tmpDir,
 	}
 }
 
-// sanitizeFilename strips path separators and traversal sequences from filenames
+// sanitizeFilename strips path separators, traversal sequences, and Windows reserved names
 func sanitizeFilename(name string) string {
-	// Take only the base name, stripping any directory components
+	name = strings.ReplaceAll(name, "\x00", "")
+	name = strings.ReplaceAll(name, "\\", "/")
 	name = filepath.Base(name)
-	// On Windows, also handle forward slashes
 	if i := strings.LastIndex(name, "/"); i >= 0 {
 		name = name[i+1:]
 	}
-	// Reject empty or dot-only names
-	if name == "" || name == "." || name == ".." {
-		name = "unnamed"
+	name = strings.TrimSpace(name)
+	name = strings.Trim(name, ".")
+
+	if name == "" {
+		return "unnamed"
 	}
+
+	// Check for Windows reserved device names (e.g. NUL, NUL.tar.gz, COM1.txt)
+	base := strings.ToUpper(name)
+	if dotIdx := strings.Index(base, "."); dotIdx >= 0 {
+		base = base[:dotIdx]
+	}
+	switch base {
+	case "CON", "PRN", "AUX", "NUL",
+		"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+		"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
+		name = "_" + name
+	}
+
 	return name
 }
 
@@ -80,11 +134,32 @@ func (s *TransferStore) Cleanup() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, item := range s.items {
-		if item.FilePath != "" {
-			os.Remove(item.FilePath)
+		removeTransferFiles(item)
+	}
+	_ = os.RemoveAll(s.tempDir)
+}
+
+func (s *TransferStore) CleanupExpired() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().Unix()
+	count := 0
+	for token, item := range s.items {
+		if item.ExpiresAt > 0 && now >= item.ExpiresAt {
+			removeTransferFiles(item)
+			item.Status = TransferStatusExpired
+			delete(s.items, token)
+			count++
 		}
 	}
-	os.RemoveAll(s.tempDir)
+	// Keep one-time tombstones long enough to return a useful TOKEN_USED response,
+	// but do not let them grow without bound in a long-running process.
+	for token, usedAt := range s.usedTokens {
+		if now-usedAt.Unix() > 24*60*60 {
+			delete(s.usedTokens, token)
+		}
+	}
+	return count
 }
 
 func generateToken() string {
@@ -93,23 +168,27 @@ func generateToken() string {
 	return hex
 }
 
-func (s *TransferStore) AddFile(name string, data []byte, size int64) (*TransferItem, error) {
+func (s *TransferStore) AddFile(name string, data []byte, size int64) (*Transfer, error) {
 	name = sanitizeFilename(name)
 	token := generateToken()
-	item := &TransferItem{
+	now := time.Now().Unix()
+	item := &Transfer{
+		ID:        uuid.New().String(),
 		Token:     token,
+		Direction: "send",
 		Type:      "file",
 		Name:      name,
 		Size:      size,
-		CreatedAt: time.Now().Unix(),
-		ExpiresAt: 0,
+		CreatedAt: now,
+		ExpiresAt: now + defaultTTL,
+		Status:    TransferStatusReady,
 	}
 
 	if size <= memoryThreshold {
 		item.Content = data
 	} else {
 		tmpFile := filepath.Join(s.tempDir, token+"_"+name)
-		if err := os.WriteFile(tmpFile, data, 0600); err != nil {
+		if err := os.WriteFile(tmpFile, data, 0o600); err != nil {
 			return nil, fmt.Errorf("failed to write temp file: %w", err)
 		}
 		item.FilePath = tmpFile
@@ -121,20 +200,20 @@ func (s *TransferStore) AddFile(name string, data []byte, size int64) (*Transfer
 	return item, nil
 }
 
-func (s *TransferStore) AddFileFromReader(name string, src io.Reader, size int64) (*TransferItem, error) {
+func (s *TransferStore) AddFileFromReader(name string, src io.Reader, size int64) (*Transfer, error) {
 	name = sanitizeFilename(name)
-	if size > maxFileSize {
-		return nil, fmt.Errorf("file too large")
-	}
-
 	token := generateToken()
-	item := &TransferItem{
+	now := time.Now().Unix()
+	item := &Transfer{
+		ID:        uuid.New().String(),
 		Token:     token,
+		Direction: "send",
 		Type:      "file",
 		Name:      name,
 		Size:      size,
-		CreatedAt: time.Now().Unix(),
-		ExpiresAt: 0,
+		CreatedAt: now,
+		ExpiresAt: now + defaultTTL,
+		Status:    TransferStatusReady,
 	}
 
 	if size >= 0 && size <= memoryThreshold {
@@ -170,12 +249,8 @@ func (s *TransferStore) AddFileFromReader(name string, src io.Reader, size int64
 	return item, nil
 }
 
-func (s *TransferStore) AddTempFile(name string, tempPath string, size int64) (*TransferItem, error) {
+func (s *TransferStore) AddTempFile(name string, tempPath string, size int64) (*Transfer, error) {
 	name = sanitizeFilename(name)
-	if size > maxFileSize {
-		return nil, fmt.Errorf("file too large")
-	}
-
 	token := generateToken()
 	targetPath := filepath.Join(s.tempDir, token+"_"+name)
 	if filepath.Clean(tempPath) != filepath.Clean(targetPath) {
@@ -197,14 +272,18 @@ func (s *TransferStore) AddTempFile(name string, tempPath string, size int64) (*
 		size = info.Size()
 	}
 
-	item := &TransferItem{
+	now := time.Now().Unix()
+	item := &Transfer{
+		ID:        uuid.New().String(),
 		Token:     token,
+		Direction: "send",
 		Type:      "file",
 		Name:      name,
 		Size:      size,
 		FilePath:  targetPath,
-		CreatedAt: time.Now().Unix(),
-		ExpiresAt: 0,
+		CreatedAt: now,
+		ExpiresAt: now + defaultTTL,
+		Status:    TransferStatusReady,
 	}
 
 	s.mu.Lock()
@@ -213,7 +292,75 @@ func (s *TransferStore) AddTempFile(name string, tempPath string, size int64) (*
 	return item, nil
 }
 
-func (s *TransferStore) AddFileFromPath(name string, srcPath string, size int64) (*TransferItem, error) {
+// AddMultiFiles stores a transfer whose individual files can be downloaded
+// separately. The paths must already point inside the store's private temp dir.
+func (s *TransferStore) AddMultiFiles(files []TransferFile) (*Transfer, error) {
+	if len(files) < 2 {
+		return nil, fmt.Errorf("multi-file transfer requires at least two files")
+	}
+
+	cleaned := make([]TransferFile, 0, len(files))
+	var total int64
+	for _, file := range files {
+		name := sanitizeFilename(file.Name)
+		if file.FilePath == "" && file.Content == nil {
+			return nil, fmt.Errorf("file %q has no content", name)
+		}
+		if file.FilePath != "" {
+			rel, err := filepath.Rel(s.tempDir, filepath.Clean(file.FilePath))
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return nil, fmt.Errorf("file %q is outside the transfer temp directory", name)
+			}
+		}
+		size := file.Size
+		if size < 0 {
+			if file.FilePath == "" {
+				size = int64(len(file.Content))
+			} else {
+				info, err := os.Stat(file.FilePath)
+				if err != nil {
+					return nil, fmt.Errorf("failed to stat %q: %w", name, err)
+				}
+				size = info.Size()
+			}
+		}
+		cleaned = append(cleaned, TransferFile{
+			ID:       file.ID,
+			Name:     name,
+			Size:     size,
+			MimeType: file.MimeType,
+			FilePath: file.FilePath,
+			Content:  file.Content,
+		})
+		total += size
+	}
+
+	now := time.Now().Unix()
+	item := &Transfer{
+		ID:        uuid.New().String(),
+		Token:     generateToken(),
+		Direction: "send",
+		Type:      "file",
+		Name:      fmt.Sprintf("landrop_%s.zip", time.Now().Format("20060102_150405")),
+		Size:      total,
+		Items:     cleaned,
+		CreatedAt: now,
+		ExpiresAt: now + defaultTTL,
+		Status:    TransferStatusReady,
+	}
+	for i := range item.Items {
+		if item.Items[i].ID == "" {
+			item.Items[i].ID = generateToken()
+		}
+	}
+
+	s.mu.Lock()
+	s.items[item.Token] = item
+	s.mu.Unlock()
+	return item, nil
+}
+
+func (s *TransferStore) AddFileFromPath(name string, srcPath string, size int64) (*Transfer, error) {
 	f, err := os.Open(srcPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -223,18 +370,22 @@ func (s *TransferStore) AddFileFromPath(name string, srcPath string, size int64)
 	return s.AddFileFromReader(name, f, size)
 }
 
-func (s *TransferStore) AddText(content string) (*TransferItem, error) {
+func (s *TransferStore) AddText(content string) (*Transfer, error) {
 	if len(content) > maxTextSize {
 		return nil, fmt.Errorf("text too large, max 10 MB")
 	}
 	token := generateToken()
-	item := &TransferItem{
+	now := time.Now().Unix()
+	item := &Transfer{
+		ID:        uuid.New().String(),
 		Token:     token,
+		Direction: "send",
 		Type:      "text",
 		Size:      int64(len(content)),
 		Content:   []byte(content),
-		CreatedAt: time.Now().Unix(),
-		ExpiresAt: 0,
+		CreatedAt: now,
+		ExpiresAt: now + defaultTTL,
+		Status:    TransferStatusReady,
 	}
 	s.mu.Lock()
 	s.items[token] = item
@@ -242,24 +393,63 @@ func (s *TransferStore) AddText(content string) (*TransferItem, error) {
 	return item, nil
 }
 
-func (s *TransferStore) Get(token string) (*TransferItem, bool) {
+func (s *TransferStore) Get(token string) (*Transfer, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	item, ok := s.items[token]
 	if !ok {
 		return nil, false
 	}
-	// Return a shallow copy to avoid races on shared fields
-	cp := *item
-	return &cp, true
+	return cloneTransfer(item), true
 }
 
-func (s *TransferStore) BeginDownload(token string) (*TransferItem, bool, bool) {
+func (s *TransferStore) GetByID(id string) (*Transfer, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, item := range s.items {
+		if item.ID == id || item.Token == id {
+			return cloneTransfer(item), true
+		}
+	}
+	return nil, false
+}
+
+func (s *TransferStore) Cancel(idOrToken string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for token, item := range s.items {
+		if item.Token == idOrToken || item.ID == idOrToken {
+			wasActive := item.Status == TransferStatusTransferring
+			item.Status = TransferStatusCancelled
+			if wasActive {
+				s.cancelled[token] = struct{}{}
+				s.cancelledFiles[token] = transferFilePaths(item)
+			} else {
+				removeTransferFiles(item)
+			}
+			delete(s.items, token)
+			return true
+		}
+	}
+	return false
+}
+
+func (s *TransferStore) IsCancelled(token string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.cancelled[token]
+	return ok
+}
+
+func (s *TransferStore) BeginDownload(token string) (*Transfer, bool, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	item, ok := s.items[token]
 	if !ok {
+		if _, used := s.usedTokens[token]; used {
+			return nil, true, true
+		}
 		return nil, false, false
 	}
 	if item.OneTimeUse && (item.Downloaded || item.Claimed) {
@@ -268,14 +458,38 @@ func (s *TransferStore) BeginDownload(token string) (*TransferItem, bool, bool) 
 	if item.OneTimeUse {
 		item.Claimed = true
 	}
+	item.Status = TransferStatusTransferring
 
-	cp := *item
-	return &cp, true, false
+	return cloneTransfer(item), true, false
+}
+
+func (s *TransferStore) IsUsed(token string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.usedTokens[token]
+	return ok
+}
+
+// UpdateProgress updates the canonical transfer record. Callers must not mutate
+// pointers returned by Get/List because those methods return snapshots.
+func (s *TransferStore) UpdateProgress(token string, written int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if item, ok := s.items[token]; ok {
+		item.BytesTransferred = written
+	}
 }
 
 func (s *TransferStore) FinishDownload(token string, outcome DownloadOutcome, peer string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	delete(s.cancelled, token)
+	if paths, ok := s.cancelledFiles[token]; ok {
+		for _, path := range paths {
+			_ = os.Remove(path)
+		}
+		delete(s.cancelledFiles, token)
+	}
 	if item, ok := s.items[token]; ok {
 		if item.OneTimeUse {
 			if !item.Claimed {
@@ -285,34 +499,42 @@ func (s *TransferStore) FinishDownload(token string, outcome DownloadOutcome, pe
 			case DownloadCompleted:
 				item.Downloaded = true
 				item.Claimed = false
+				item.Status = TransferStatusCompleted
+				item.DownloadCount++
+				s.usedTokens[token] = time.Now()
 				s.addToHistory(item, peer, "success")
-				if item.FilePath != "" {
-					_ = os.Remove(item.FilePath)
-				}
+				removeTransferFiles(item)
 				delete(s.items, token)
 				return
 			case DownloadFailed:
+				item.Status = TransferStatusFailed
 				s.addToHistory(item, peer, "failed")
 				item.Claimed = false
 			case DownloadInterrupted:
+				item.Status = TransferStatusInterrupted
 				s.addToHistory(item, peer, "interrupted")
 				item.Claimed = false
 			case DownloadReleased:
+				item.Status = TransferStatusReady
 				item.Claimed = false
 			}
 			return
 		}
+
 		switch outcome {
 		case DownloadCompleted:
-			if item.Downloaded {
-				return
-			}
 			item.Downloaded = true
+			item.Status = TransferStatusCompleted
+			item.DownloadCount++
 			s.addToHistory(item, peer, "success")
 		case DownloadFailed:
+			item.Status = TransferStatusFailed
 			s.addToHistory(item, peer, "failed")
 		case DownloadInterrupted:
+			item.Status = TransferStatusInterrupted
 			s.addToHistory(item, peer, "interrupted")
+		case DownloadReleased:
+			item.Status = TransferStatusReady
 		}
 	}
 }
@@ -336,7 +558,7 @@ func copyFile(srcPath string, dstPath string) error {
 	return dst.Close()
 }
 
-func (s *TransferStore) addToHistory(item *TransferItem, peer string, status string) {
+func (s *TransferStore) addToHistory(item *Transfer, peer string, status string) {
 	s.history = append(s.history, item)
 	if len(s.history) > 20 {
 		s.history = s.history[len(s.history)-20:]
@@ -352,20 +574,63 @@ func (s *TransferStore) addToHistory(item *TransferItem, peer string, status str
 	})
 }
 
-func (s *TransferStore) GetHistory() []*TransferItem {
+func removeTransferFiles(item *Transfer) {
+	if item == nil {
+		return
+	}
+	if item.FilePath != "" {
+		_ = os.Remove(item.FilePath)
+	}
+	for _, file := range item.Items {
+		if file.FilePath != "" {
+			_ = os.Remove(file.FilePath)
+		}
+	}
+}
+
+func transferFilePaths(item *Transfer) []string {
+	if item == nil {
+		return nil
+	}
+	paths := make([]string, 0, len(item.Items)+1)
+	if item.FilePath != "" {
+		paths = append(paths, item.FilePath)
+	}
+	for _, file := range item.Items {
+		if file.FilePath != "" {
+			paths = append(paths, file.FilePath)
+		}
+	}
+	return paths
+}
+
+func (s *TransferStore) GetHistory() []*Transfer {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	result := make([]*TransferItem, len(s.history))
-	copy(result, s.history)
+	result := make([]*Transfer, len(s.history))
+	for i, item := range s.history {
+		result[i] = cloneTransfer(item)
+	}
 	return result
 }
 
-func (s *TransferStore) List() []*TransferItem {
+func (s *TransferStore) List() []*Transfer {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	result := make([]*TransferItem, 0, len(s.items))
+	result := make([]*Transfer, 0, len(s.items))
 	for _, item := range s.items {
-		result = append(result, item)
+		result = append(result, cloneTransfer(item))
 	}
 	return result
+}
+
+func cloneTransfer(item *Transfer) *Transfer {
+	if item == nil {
+		return nil
+	}
+	cp := *item
+	if item.Items != nil {
+		cp.Items = append([]TransferFile(nil), item.Items...)
+	}
+	return &cp
 }

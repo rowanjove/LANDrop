@@ -26,6 +26,20 @@ func TestConfigStoreSetDeviceNameFallsBackToDefault(t *testing.T) {
 	}
 }
 
+func TestConfigStorePartialUpdatePreservesDeviceName(t *testing.T) {
+	store := &ConfigStore{path: filepath.Join(t.TempDir(), "config.json")}
+	if _, err := store.UpdateConfig(AppConfig{DeviceName: "Desk Node"}, "Host-PC"); err != nil {
+		t.Fatalf("initial UpdateConfig() error = %v", err)
+	}
+	updated, err := store.UpdateConfig(AppConfig{Theme: "dark", Language: "en"}, "Host-PC")
+	if err != nil {
+		t.Fatalf("partial UpdateConfig() error = %v", err)
+	}
+	if updated.DeviceName != "Desk Node" || updated.Theme != "dark" || updated.Language != "en" {
+		t.Fatalf("partial update = %+v, want device name and preferences preserved", updated)
+	}
+}
+
 func TestHandleSettingsPostUpdatesDeviceName(t *testing.T) {
 	store := &ConfigStore{path: filepath.Join(t.TempDir(), "config.json")}
 	app := NewApp("", "")
@@ -71,5 +85,56 @@ func TestFilterHistoryRecordsByPeerAndDate(t *testing.T) {
 	}
 	if got[0].Name != "a" {
 		t.Fatalf("filterHistoryRecords() first name = %q, want %q", got[0].Name, "a")
+	}
+}
+
+func TestHandleSettingsPutUpdatesThemeAndLanguage(t *testing.T) {
+	store := &ConfigStore{path: filepath.Join(t.TempDir(), "config.json")}
+	app := NewApp("", "")
+	app.config = store
+	app.systemName = "Host-PC"
+	app.hostname = "Host-PC"
+
+	body := bytes.NewBufferString(`{"device_name":"Workstation","theme":"dark","language":"en"}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v2/settings", body)
+	rec := httptest.NewRecorder()
+
+	app.handleSettings(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleSettings() status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload AppConfig
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if payload.DeviceName != "Workstation" || payload.Theme != "dark" || payload.Language != "en" {
+		t.Fatalf("updated config = %+v, want Workstation/dark/en", payload)
+	}
+}
+
+func TestHandleSettingsGetReturnsFullConfig(t *testing.T) {
+	store := &ConfigStore{path: filepath.Join(t.TempDir(), "config.json")}
+	app := NewApp("", "")
+	app.config = store
+	app.systemName = "Host-PC"
+	app.hostname = "Host-PC"
+
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	rec := httptest.NewRecorder()
+
+	app.handleSettings(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleSettings() status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload AppConfig
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if payload.DeviceName != "Host-PC" {
+		t.Fatalf("device_name = %q, want %q", payload.DeviceName, "Host-PC")
 	}
 }

@@ -39,29 +39,38 @@ func (a *App) setDeviceName(name string) (string, error) {
 func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]string{
-			"device_name": a.hostname,
-		})
-	case http.MethodPost:
-		var req struct {
-			DeviceName string `json:"device_name"`
-		}
+		cfg := a.config.GetConfig(a.systemName)
+		writeJSON(w, http.StatusOK, cfg)
+	case http.MethodPost, http.MethodPut:
+		var req AppConfig
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error": "invalid request",
 			})
 			return
 		}
-		deviceName, err := a.setDeviceName(req.DeviceName)
+
+		updatedCfg, err := a.config.UpdateConfig(req, a.systemName)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{
 				"error": "failed to save settings",
 			})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{
-			"device_name": deviceName,
-		})
+
+		if updatedCfg.DeviceName != a.hostname {
+			a.hostname = updatedCfg.DeviceName
+			if a.mdns != nil {
+				_ = a.mdns.UpdateDeviceName(a.hostname)
+			}
+			if a.broker != nil {
+				a.broker.Broadcast("settings_updated", map[string]string{
+					"device_name": a.hostname,
+				})
+			}
+		}
+
+		writeJSON(w, http.StatusOK, updatedCfg)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}

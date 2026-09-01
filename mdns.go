@@ -21,6 +21,7 @@ const (
 type Device struct {
 	Name     string `json:"name"`
 	Addr     string `json:"addr"`
+	Scheme   string `json:"scheme,omitempty"`
 	OS       string `json:"os"`
 	Version  string `json:"version"`
 	LastSeen int64  `json:"last_seen"`
@@ -34,6 +35,7 @@ type MDNSManager struct {
 	broker     *SSEBroker
 	port       int
 	deviceName string
+	scheme     string
 	localIPs   map[string]struct{}
 	cancel     context.CancelFunc
 }
@@ -47,6 +49,7 @@ func NewMDNSManager(port int, broker *SSEBroker, deviceName string) *MDNSManager
 		broker:     broker,
 		port:       port,
 		deviceName: deviceName,
+		scheme:     "http",
 		localIPs:   getLocalIPv4s(),
 	}
 }
@@ -72,10 +75,34 @@ func getLocalIPv4s() map[string]struct{} {
 }
 
 func (m *MDNSManager) txtRecords(name string) []string {
+	m.mu.RLock()
+	scheme := m.scheme
+	m.mu.RUnlock()
 	return []string{
 		"version=" + version,
 		"os=" + getOS(),
 		"name=" + name,
+		"scheme=" + scheme,
+	}
+}
+
+// SetScheme publishes the transport used by this LANDrop instance so peers
+// can open HTTPS services correctly when TLS is enabled.
+func (m *MDNSManager) SetScheme(scheme string) {
+	if scheme != "https" {
+		scheme = "http"
+	}
+	m.mu.Lock()
+	if m.scheme == scheme {
+		m.mu.Unlock()
+		return
+	}
+	m.scheme = scheme
+	server := m.server
+	name := m.deviceName
+	m.mu.Unlock()
+	if server != nil {
+		server.SetText(m.txtRecords(name))
 	}
 }
 
@@ -192,18 +219,23 @@ func (m *MDNSManager) isSelf(ip string, port int) bool {
 	return ok
 }
 
-func parseTXT(entries []string) (string, string) {
+func parseTXT(entries []string) (string, string, string) {
 	osType := ""
 	serviceVersion := ""
+	scheme := "http"
 	for _, txt := range entries {
 		switch {
 		case len(txt) > 3 && txt[:3] == "os=":
 			osType = txt[3:]
 		case len(txt) > 8 && txt[:8] == "version=":
 			serviceVersion = txt[8:]
+		case len(txt) > 7 && txt[:7] == "scheme=":
+			if txt[7:] == "https" {
+				scheme = "https"
+			}
 		}
 	}
-	return osType, serviceVersion
+	return osType, serviceVersion, scheme
 }
 
 func (m *MDNSManager) discover(ctx context.Context) {
@@ -216,7 +248,7 @@ func (m *MDNSManager) discover(ctx context.Context) {
 
 		resolver, err := zeroconf.NewResolver(nil)
 		if err != nil {
-			log.Printf("mDNS resolver error: %v", err)
+			log.Printf("mDNS 解析器错误：%v", err)
 			time.Sleep(10 * time.Second)
 			continue
 		}
@@ -234,11 +266,12 @@ func (m *MDNSManager) discover(ctx context.Context) {
 				}
 
 				addr := fmt.Sprintf("%s:%d", ip, entry.Port)
-				osType, serviceVersion := parseTXT(entry.Text)
+				osType, serviceVersion, scheme := parseTXT(entry.Text)
 				now := time.Now().Unix()
 				device := &Device{
 					Name:     entry.Instance,
 					Addr:     addr,
+					Scheme:   scheme,
 					OS:       osType,
 					Version:  serviceVersion,
 					LastSeen: now,
@@ -251,7 +284,8 @@ func (m *MDNSManager) discover(ctx context.Context) {
 					!existing.Online ||
 					existing.Name != device.Name ||
 					existing.OS != device.OS ||
-					existing.Version != device.Version
+					existing.Version != device.Version ||
+					existing.Scheme != device.Scheme
 				m.devices[addr] = device
 				m.mu.Unlock()
 
@@ -264,7 +298,7 @@ func (m *MDNSManager) discover(ctx context.Context) {
 		browseCtx, browseCancel := context.WithTimeout(ctx, 5*time.Second)
 		err = resolver.Browse(browseCtx, "_landrop._tcp", "local.", entries)
 		if err != nil {
-			log.Printf("mDNS browse error: %v", err)
+			log.Printf("mDNS 浏览错误：%v", err)
 		}
 		<-browseCtx.Done()
 		browseCancel()

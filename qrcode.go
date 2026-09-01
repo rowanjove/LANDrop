@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -59,8 +61,20 @@ func handleQR(w http.ResponseWriter, r *http.Request, addr string) {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	url := scheme + "://" + addr
-	svg, err := generateQRSVG(url, size)
+	target := strings.TrimSpace(r.URL.Query().Get("target"))
+	if target != "" {
+		parsed, err := url.Parse(target)
+		// QR targets are restricted to an absolute HTTP(S) URL on this server.
+		// This prevents the endpoint from becoming a generic phishing/redirect
+		// generator while allowing share links to carry their token.
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.Host != r.Host {
+			target = ""
+		}
+	}
+	if target == "" {
+		target = scheme + "://" + addr
+	}
+	svg, err := generateQRSVG(target, size)
 	if err != nil {
 		http.Error(w, "failed to generate QR code", http.StatusInternalServerError)
 		return

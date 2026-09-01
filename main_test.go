@@ -5,9 +5,30 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestBrowserCommand(t *testing.T) {
+	if _, _, err := browserCommand(""); err == nil {
+		t.Fatal("browserCommand(\"\") error = nil, want validation error")
+	}
+
+	command, args, err := browserCommand("http://127.0.0.1:53217")
+	if err != nil {
+		t.Fatalf("browserCommand() error = %v", err)
+	}
+	if command == "" || len(args) == 0 {
+		t.Fatalf("browserCommand() = (%q, %#v), want a command and arguments", command, args)
+	}
+	if got := args[len(args)-1]; got != "http://127.0.0.1:53217" {
+		t.Fatalf("browserCommand() URL argument = %q, want %q", got, "http://127.0.0.1:53217")
+	}
+	if runtime.GOOS == "windows" && command != "rundll32" {
+		t.Fatalf("Windows browser command = %q, want rundll32", command)
+	}
+}
 
 func TestReserveDownloadPathKeepsOriginalWhenFree(t *testing.T) {
 	dir := t.TempDir()

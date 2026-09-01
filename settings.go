@@ -10,7 +10,11 @@ import (
 )
 
 type AppConfig struct {
-	DeviceName string `json:"device_name,omitempty"`
+	DeviceName           string `json:"device_name,omitempty"`
+	DefaultExpiry        int64  `json:"default_expiry,omitempty"`
+	DefaultDownloadLimit int    `json:"default_download_limit,omitempty"`
+	Theme                string `json:"theme,omitempty"`
+	Language             string `json:"language,omitempty"`
 }
 
 type ConfigStore struct {
@@ -22,6 +26,10 @@ type ConfigStore struct {
 var appConfig = NewConfigStore()
 
 func getStateDir() string {
+	if override := strings.TrimSpace(os.Getenv("LANDROP_STATE_DIR")); override != "" {
+		_ = os.MkdirAll(override, 0o755)
+		return override
+	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		configDir = os.TempDir()
@@ -82,43 +90,71 @@ func (s *ConfigStore) Load() error {
 	return nil
 }
 
-func (s *ConfigStore) DeviceName(defaultName string) string {
+func (s *ConfigStore) GetConfig(defaultName string) AppConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.cfg.DeviceName != "" {
-		return s.cfg.DeviceName
+	cfg := s.cfg
+	if cfg.DeviceName == "" {
+		cfg.DeviceName = defaultName
 	}
-	return defaultName
+	return cfg
 }
 
-func (s *ConfigStore) SetDeviceName(name string, defaultName string) (string, error) {
-	name = normalizeDeviceName(name)
+func (s *ConfigStore) UpdateConfig(newCfg AppConfig, defaultName string) (AppConfig, error) {
 	defaultName = normalizeDeviceName(defaultName)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if name == defaultName {
-		name = ""
+	if newCfg.DeviceName != "" {
+		name := normalizeDeviceName(newCfg.DeviceName)
+		if name == defaultName {
+			name = ""
+		}
+		s.cfg.DeviceName = name
+	}
+	if newCfg.Theme != "" {
+		s.cfg.Theme = newCfg.Theme
+	}
+	if newCfg.Language != "" {
+		s.cfg.Language = newCfg.Language
+	}
+	if newCfg.DefaultExpiry > 0 {
+		s.cfg.DefaultExpiry = newCfg.DefaultExpiry
+	}
+	if newCfg.DefaultDownloadLimit > 0 {
+		s.cfg.DefaultDownloadLimit = newCfg.DefaultDownloadLimit
 	}
 
-	s.cfg.DeviceName = name
 	data, err := json.MarshalIndent(s.cfg, "", "  ")
 	if err != nil {
-		return "", err
+		return s.cfg, err
 	}
 
 	tmpPath := s.path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
-		return "", err
+		return s.cfg, err
 	}
 	if err := os.Rename(tmpPath, s.path); err != nil {
 		_ = os.Remove(tmpPath)
-		return "", err
+		return s.cfg, err
 	}
 
-	if s.cfg.DeviceName != "" {
-		return s.cfg.DeviceName, nil
+	res := s.cfg
+	if res.DeviceName == "" {
+		res.DeviceName = defaultName
 	}
-	return defaultName, nil
+	return res, nil
+}
+
+func (s *ConfigStore) DeviceName(defaultName string) string {
+	return s.GetConfig(defaultName).DeviceName
+}
+
+func (s *ConfigStore) SetDeviceName(name string, defaultName string) (string, error) {
+	cfg, err := s.UpdateConfig(AppConfig{DeviceName: name}, defaultName)
+	if err != nil {
+		return "", err
+	}
+	return cfg.DeviceName, nil
 }

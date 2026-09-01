@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -91,7 +92,7 @@ func (p *PINManager) Middleware(next http.Handler) http.Handler {
 		}
 
 		// Allow info and qr endpoints without PIN
-		if r.URL.Path == "/info" || r.URL.Path == "/qr" {
+		if r.URL.Path == "/info" || r.URL.Path == "/qr" || r.URL.Path == "/api/v2/info" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -110,7 +111,7 @@ func (p *PINManager) Middleware(next http.Handler) http.Handler {
 
 		if pin == "" {
 			// Return PIN entry page for browser requests
-			if r.Header.Get("Accept") == "" || r.URL.Path == "/" {
+			if r.Header.Get("Accept") == "" || strings.Contains(r.Header.Get("Accept"), "text/html") {
 				servePINPage(w)
 				return
 			}

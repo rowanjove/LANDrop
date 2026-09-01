@@ -38,9 +38,15 @@ func LoadHistory() {
 
 func SaveHistory() {
 	data, err := json.MarshalIndent(historyList, "", "  ")
-	if err == nil {
-		os.WriteFile(getHistoryPath(), data, 0644)
+	if err != nil {
+		return
 	}
+	path := getHistoryPath()
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+		return
+	}
+	_ = os.Rename(tmpPath, path)
 }
 
 func AppendHistory(record *HistoryRecord) {

@@ -1,7 +1,18 @@
+# Binaries and build artifacts
+landrop.exe
+landrop
+landrop_*_check*
+temp/
 dist/
-*.exe
-*.exe~
-*.zip
-*.tar.gz
-SHA256SUMS.txt
+# The embedded web production bundle is a release input, not a local-only build artifact.
+!web/dist/
+!web/dist/**
 
+# Web Node modules
+web/node_modules/
+.DS_Store
+Thumbs.db
+
+# OS Temporary files
+*.tmp
+*.part-*
