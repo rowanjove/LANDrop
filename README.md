@@ -4,17 +4,17 @@
 
 LAN Drop 是一个 Go 编写的局域网分享工具，用于在同一网络内传送文件、文本和剪贴板内容。它提供桌面与手机共用的 Web 界面，以及发送、接收、设备发现和历史记录命令，不需要云端中转服务。
 
-[下载 v2.0.0](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.0) · [查看更新说明](docs/releases/v2.0.0.md) · [报告问题](https://github.com/rowanjove/LANDrop/issues)
+[下载 v2.0.1](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.1) · [查看更新说明](docs/releases/v2.0.1.md) · [报告问题](https://github.com/rowanjove/LANDrop/issues)
 
 ## 界面截图
 
 桌面端：
 
-![LANDrop 2.0 桌面端首页](docs/screenshots/landrop-2.0-desktop.png)
+![LANDrop 2.0 桌面端首页](docs/screenshots/landrop-2.0-desktop.jpg)
 
 移动端：
 
-<img src="docs/screenshots/landrop-2.0-mobile.png" alt="LANDrop 2.0 移动端首页" width="390">
+<img src="docs/screenshots/landrop-2.0-mobile.jpg" alt="LANDrop 2.0 移动端首页" width="390">
 
 ## 2.0 更新
 
@@ -27,7 +27,7 @@ LAN Drop 是一个 Go 编写的局域网分享工具，用于在同一网络内�
 - mDNS 会携带 HTTP／HTTPS 协议，设备跳转和二维码使用正确地址。
 - 双击 `landrop.exe` 或运行 `landrop serve` 后自动打开浏览器，终端输出以中文为主。
 
-完整内容见 [v2.0.0 更新说明](docs/releases/v2.0.0.md)。
+完整内容见 [v2.0.0 更新说明](docs/releases/v2.0.0.md)，本次隐私与文档清理见 [v2.0.1 更新说明](docs/releases/v2.0.1.md)。
 
 ## 安装与开始分享
 
@@ -116,10 +116,10 @@ go build -o landrop.exe .
 
 ## 文档
 
-- [产品需求](docs/PRD.md)
 - [架构说明](docs/ARCHITECTURE.md)
 - [实施记录](docs/IMPLEMENTATION.md)
 - [v2.0.0 更新说明](docs/releases/v2.0.0.md)
+- [v2.0.1 更新说明](docs/releases/v2.0.1.md)
 
 ## 贡献与许可
 

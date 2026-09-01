@@ -133,7 +133,7 @@ export function Settings() {
         <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: 'var(--text-secondary)' }}>{t('settings.version')}</span>
-            <span className="font-mono">v{state.info?.version || '2.0.0'}</span>
+            <span className="font-mono">v{state.info?.version || '2.0.1'}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: 'var(--text-secondary)' }}>{t('settings.os')}</span>
