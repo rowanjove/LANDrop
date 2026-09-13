@@ -4,7 +4,7 @@
 
 LAN Drop is a Go-based tool for sharing files, text, and clipboard content between devices on the same network. It provides a shared web interface for desktop and mobile browsers, plus CLI commands for sending, receiving, device discovery, and transfer history. No cloud relay service is required.
 
-[Download v2.0.1](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.1) · [Release notes](docs/releases/v2.0.1.md) · [Report an issue](https://github.com/rowanjove/LANDrop/issues)
+[Download v2.0.2](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.2) · [Release notes](docs/releases/v2.0.2.md) · [Report an issue](https://github.com/rowanjove/LANDrop/issues)
 
 ## Screenshots
 
@@ -27,7 +27,7 @@ Mobile:
 - Advertised the correct HTTP or HTTPS scheme through mDNS for device links and QR codes.
 - Automatically opens the browser when `landrop.exe` or `landrop serve` starts; terminal output is now Chinese-first.
 
-See the complete [v2.0.0 release notes](docs/releases/v2.0.0.md); the privacy and documentation cleanup is covered in the [v2.0.1 release notes](docs/releases/v2.0.1.md).
+See the complete [v2.0.0 release notes](docs/releases/v2.0.0.md); the privacy and documentation cleanup is covered in [v2.0.1](docs/releases/v2.0.1.md), and the icon and release-resource refresh is covered in [v2.0.2](docs/releases/v2.0.2.md).
 
 ## Install and start sharing
 
@@ -120,6 +120,7 @@ The frontend output is stored in `web/dist` and embedded into the release binary
 - [Implementation notes](docs/IMPLEMENTATION.md)
 - [v2.0.0 release notes](docs/releases/v2.0.0.md)
 - [v2.0.1 release notes](docs/releases/v2.0.1.md)
+- [v2.0.2 release notes](docs/releases/v2.0.2.md)
 
 ## Contributing and license
 

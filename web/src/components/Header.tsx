@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { appState, AppState } from '../state/app.ts'
 import { Button } from './Button.tsx'
-import { IconDevice, IconHistory, IconLogo, IconQr, IconSettings } from './Icons.tsx'
+import { IconDevice, IconHistory, IconQr, IconSettings } from './Icons.tsx'
 import { QRDialog } from './QRDialog.tsx'
 import { Dialog } from './Dialog.tsx'
 import { toast } from './Toast.tsx'
@@ -45,8 +45,8 @@ export function Header({ currentPath, onNavigate }: HeaderProps) {
           style={{ cursor: 'pointer' }}
           onClick={() => onNavigate('/')}
         >
-          <span className="header-brand-icon" style={{ color: 'var(--accent)' }}>
-            <IconLogo size={20} />
+          <span className="header-brand-icon">
+            <img src="./assets/landrop-icon.png" alt="" aria-hidden="true" />
           </span>
           <span>{t('app.title')}</span>
         </div>

@@ -47,6 +47,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.header-brand-icon img {
+  width: 22px;
+  height: 22px;
+  display: block;
 }
 
 .header-nav {
