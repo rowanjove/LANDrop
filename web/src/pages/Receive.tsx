@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { Button } from '../components/Button.tsx'
 import { EmptyState } from '../components/EmptyState.tsx'
-import { IconCheck, IconDownload, IconFile, IconCopy } from '../components/Icons.tsx'
+import { IconCheck, IconDownload, IconFile, IconCopy, IconText } from '../components/Icons.tsx'
 import { fetchShareInfo, getDownloadUrl, getItemDownloadUrl, ShareData } from '../api/transfers.ts'
 import { ApiException } from '../api/client.ts'
 import { formatSize } from '../utils/format.ts'
@@ -65,7 +65,7 @@ export function Receive({ token }: ReceiveProps) {
       <section className="panel-section">
         <div className="panel-header">
           <div className="panel-title">
-            {isText ? <IconCopy size={17} /> : <IconFile size={17} />}
+            {isText ? <IconText size={17} /> : <IconFile size={17} />}
             {t('receive.title')}
           </div>
           {data.one_time && <span className="status-badge success">{t('receive.fileReady')}</span>}

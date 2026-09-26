@@ -21,6 +21,7 @@ export function useEvents() {
           appState.setConnected(true)
           // Refresh devices and history on reconnection
           devicesState.refresh()
+          transfersState.refreshActiveTransfers()
           transfersState.refreshHistory(10)
         }
 
@@ -31,7 +32,7 @@ export function useEvents() {
         eventSource.addEventListener('file_ready', (e) => {
           try {
             const data = JSON.parse(e.data)
-            // If someone else pushed file_ready or local ready
+            transfersState.refreshActiveTransfers()
             transfersState.refreshHistory(10)
             if (data.type === 'file') {
               toast.info(t('events.fileNotice', { name: data.name || t('events.unnamedFile') }))
@@ -79,6 +80,12 @@ export function useEvents() {
         })
 
         eventSource.addEventListener('done', () => {
+          transfersState.refreshActiveTransfers()
+          transfersState.refreshHistory(10)
+        })
+
+        eventSource.addEventListener('transfer_cancelled', () => {
+          transfersState.refreshActiveTransfers()
           transfersState.refreshHistory(10)
         })
       } catch {
@@ -89,6 +96,7 @@ export function useEvents() {
     // Initial load
     appState.loadInfo()
     devicesState.refresh()
+    transfersState.refreshActiveTransfers()
     transfersState.refreshHistory(10)
     connect()
 

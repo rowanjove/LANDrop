@@ -5,6 +5,7 @@ export interface DeviceItem {
   os: string
   addr: string
   scheme?: 'http' | 'https'
+  version?: string
   online: boolean
   last_seen?: number
 }

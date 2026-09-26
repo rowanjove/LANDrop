@@ -156,6 +156,10 @@ export const en: TranslationType = {
     emptyHint: 'Sent and received files and text will appear here',
     textMessage: 'Text message',
     unknownFile: 'Unknown file',
+    readyTitle: 'Ready to Download (Click to save to PC)',
+    readyBadge: 'Ready',
+    downloadBtn: 'Download',
+    viewBtn: 'View',
   },
   accessibility: {
     mobileNav: 'Mobile bottom navigation',

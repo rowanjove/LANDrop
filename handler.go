@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -146,6 +147,16 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	// Try serving static asset from distFS
 	data, err := fs.ReadFile(distFS, cleanPath)
+	if err != nil {
+		if idx := strings.Index(cleanPath, "assets/"); idx >= 0 {
+			assetPath := cleanPath[idx:]
+			if assetData, assetErr := fs.ReadFile(distFS, assetPath); assetErr == nil {
+				data = assetData
+				cleanPath = assetPath
+				err = nil
+			}
+		}
+	}
 	if err == nil {
 		if strings.HasPrefix(cleanPath, "assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
@@ -885,6 +896,16 @@ func (a *App) handleDevices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleEvents(w http.ResponseWriter, r *http.Request) {
+	clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		clientIP = r.RemoteAddr
+	}
+
+	if a.mdns != nil && !a.mdns.IsLocalIP(clientIP) {
+		a.mdns.AddWebClient(clientIP, r.UserAgent())
+		defer a.mdns.RemoveWebClient(clientIP)
+	}
+
 	a.broker.ServeHTTP(w, r)
 }
 

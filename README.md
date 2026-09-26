@@ -1,129 +1,109 @@
-# LAN Drop — 局域网文件与文本分享
+# LANDrop — 局域网文件与文本分享
 
 [简体中文](README.md) | [English](README.en.md)
 
-LAN Drop 是一个 Go 编写的局域网分享工具，用于在同一网络内传送文件、文本和剪贴板内容。它提供桌面与手机共用的 Web 界面，以及发送、接收、设备发现和历史记录命令，不需要云端中转服务。
+LANDrop 是一个轻量级局域网文件与文本快传工具，使用 Go 编写并内嵌响应式 Web 界面。只需在同一 Wi-Fi 或局域网下，即可在电脑、手机和平板之间传输文件、文本与剪贴板内容，免装客户端，无需公网中转。
 
-[下载 v2.0.2](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.2) · [查看更新说明](docs/releases/v2.0.2.md) · [报告问题](https://github.com/rowanjove/LANDrop/issues)
+[下载最新版本 (v2.0.3)](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.3) · [更新说明](docs/releases/v2.0.3.md) · [提交反馈](https://github.com/rowanjove/LANDrop/issues)
 
 ## 界面截图
 
-桌面端：
+桌面端界面：
 
-![LANDrop 2.0 桌面端首页](docs/screenshots/landrop-2.0-desktop.jpg)
+![LANDrop 桌面端首页](docs/screenshots/landrop-2.0-desktop.jpg)
 
-移动端：
+移动端界面：
 
-<img src="docs/screenshots/landrop-2.0-mobile.jpg" alt="LANDrop 2.0 移动端首页" width="390">
+<img src="docs/screenshots/landrop-2.0-mobile.jpg" alt="LANDrop 移动端首页" width="380">
 
-## 2.0 更新
+## 主要特性
 
-- 使用 Preact、TypeScript 和模块化 CSS 重建 Web 界面，桌面端与移动端共用一套功能。
-- 文件选择改为发送队列，可继续添加、移除或清空，确认后才开始上传。
-- 多文件传输支持逐个下载，也可按需下载 ZIP。
-- 新增独立接收页面，文件和文本可以预览、复制或下载。
-- 完善传输进度、取消、过期清理、断点续传和一次性链接生命周期。
-- 设备名、主题和语言由后端持久化，刷新与重启后保留。
-- mDNS 会携带 HTTP／HTTPS 协议，设备跳转和二维码使用正确地址。
-- 双击 `landrop.exe` 或运行 `landrop serve` 后自动打开浏览器，终端输出以中文为主。
+- **即开即用**：双击直接启动，自动拉起默认浏览器，同时在终端打印局域网访问地址和二维码。
+- **免装客户端**：手机、平板自带浏览器扫码即可收发文件，支持移动端设备自动发现与在线状态感知。
+- **发送队列与批量下载**：支持多文件拖拽加入队列，支持单文件逐个提取或按需自动打包 ZIP。
+- **文本与剪贴板互通**：支持文本消息发送、剪贴板一键推送与同步，完整保留排版与换行。
+- **安全与权限控制**：支持可选的 4 位动态 PIN 码验证、自签名 HTTPS/TLS 加密传输及一次性阅后即焚下载链接。
+- **完整命令行支持**：除 Web 界面外，支持纯终端下的文件发送、接收、断点续传与设备探测。
 
-完整内容见 [v2.0.0 更新说明](docs/releases/v2.0.0.md)；隐私与文档清理见 [v2.0.1 更新说明](docs/releases/v2.0.1.md)，本次图标与发布资源更新见 [v2.0.2 更新说明](docs/releases/v2.0.2.md)。
+## 快速使用
 
-## 安装与开始分享
+在 [GitHub Releases](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.3) 下载对应操作系统的压缩包，解压后直接运行：
 
-Release 提供 Windows amd64、macOS amd64／arm64、Linux amd64／arm64 压缩包。下载对应平台版本并解压。
-
-Windows：
-
+### Windows
+双击 `landrop.exe`，或在命令行中运行：
 ```powershell
 .\landrop.exe
 ```
 
-macOS／Linux：
-
+### macOS / Linux
 ```bash
 chmod +x landrop
 ./landrop
 ```
 
-程序启动后会自动打开本机浏览器，同时在终端显示局域网访问地址和二维码。手机可在同一局域网内扫描二维码进入页面。请允许必要的局域网防火墙访问，不要把服务端口转发到公网。
+启动后控制台将显示本机 IP 地址及对应端口（默认 `53217`）。同一局域网下的其他设备打开浏览器访问该地址，或扫描终端二维码即可连接。
 
-## 支持的操作
-
-- 在浏览器中选择或拖入单个、多个文件。
-- 创建文本分享，保留中文、Emoji、代码和换行。
-- 在 Web 界面推送和读取纯文本剪贴板内容。
-- 通过 mDNS 发现同一局域网内的设备，也可手动指定地址。
-- 使用 PIN、HTTPS/TLS 和一次性下载链接控制访问。
-- 查看传输进度、状态和本地历史记录。
-- 使用 CLI 发送、接收和断点续传文件。
-
-## 常用命令
+## 常用命令行示例
 
 ```bash
+# 启动后台服务并自定义端口
 landrop serve --port 53217
-landrop send ./photo.jpg ./documents/
-landrop send --text "来自 LAN Drop 的消息"
-landrop recv . --target 192.168.1.10:53217
-landrop recv . --continue --target 192.168.1.10:53217
+
+# 发送文件或目录至局域网
+landrop send ./document.pdf ./photos/
+
+# 发送纯文本消息
+landrop send --text "局域网通知内容"
+
+# 接收文件并保存至指定目录（自动连接目标节点）
+landrop recv ./downloads --target 192.168.1.10:53217
+
+# 断点续传未下载完成的大文件
+landrop recv ./downloads --continue --target 192.168.1.10:53217
+
+# 启用 4 位数字 PIN 码与 TLS 加密保护
+landrop serve --pin 8848 --tls --one-time
+
+# 扫描并查看局域网内当前在线设备
 landrop devices
+
+# 查看最近传输历史记录
 landrop history --limit 20
 ```
 
-启用 PIN、TLS 或一次性下载：
-
-```bash
-landrop serve --pin 5231 --tls --one-time
-landrop recv . --pin 5231 --tls --target 192.168.1.10:53217
-```
-
-查看全部命令：
-
-```bash
-landrop --help
-```
-
-## 一次性链接与安全边界
-
-一次性下载令牌在真实下载完成后消耗。打开预览页、发送 HEAD 请求或中断未完成的下载不会提前消耗令牌。
-
-TLS 用于客户端与 LAN Drop 服务之间的传输加密。当前服务生成临时自签名证书，浏览器会提示证书不受信任；部分 CLI HTTPS 请求跳过证书验证，因此不能仅凭 `--tls` 就假设获得了完整的服务器身份校验或中间人攻击防护。
-
-默认命令不自动启用 PIN 或 TLS。请在可信局域网中使用，按需启用访问保护并核对目标设备。LANDrop 不应直接暴露到公网。
-
 ## 从源码构建
 
-环境要求：Go 1.25、Node.js 18 或更高版本。
+环境要求：Go 1.22+，Node.js 18+。
 
 ```bash
+# 克隆仓库
 git clone https://github.com/rowanjove/LANDrop.git
-cd LANDrop/web
+cd LANDrop
+
+# 构建前端产物
+cd web
 npm ci
-npm run typecheck
 npm run build
 cd ..
+
+# 编译主程序（内嵌前端静态文件）
 go test ./...
-go build -o landrop .
+go build -ldflags "-s -w" -o landrop .
 ```
 
-Windows 可将最后一条替换为：
-
+Windows 环境输出：
 ```powershell
-go build -o landrop.exe .
+go build -ldflags "-s -w" -o landrop.exe .
 ```
 
-前端构建产物位于 `web/dist`，发布二进制通过 `go:embed` 将其内嵌，不需要用户安装 Node.js。
+## 相关文档
 
-## 文档
+- [系统架构设计](docs/ARCHITECTURE.md)
+- [v2.0.3 更新日志](docs/releases/v2.0.3.md)
+- [v2.0.2 更新日志](docs/releases/v2.0.2.md)
+- [v2.0.1 更新日志](docs/releases/v2.0.1.md)
+- [v2.0.0 更新日志](docs/releases/v2.0.0.md)
 
-- [架构说明](docs/ARCHITECTURE.md)
-- [实施记录](docs/IMPLEMENTATION.md)
-- [v2.0.0 更新说明](docs/releases/v2.0.0.md)
-- [v2.0.1 更新说明](docs/releases/v2.0.1.md)
-- [v2.0.2 更新说明](docs/releases/v2.0.2.md)
+## 开源协议
 
-## 贡献与许可
-
-通过 [Issues](https://github.com/rowanjove/LANDrop/issues) 提交问题时，请说明操作系统、版本、发送与接收方式、网络环境和复现步骤，不要附私人文件或 PIN。代码改动提交前运行 `go test ./...`、`npm run typecheck` 和 `npm run build`。
-
-本项目采用 [MIT License](LICENSE)。
+本项目基于 [MIT License](LICENSE) 许可协议开放。

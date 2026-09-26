@@ -1,129 +1,109 @@
-# LAN Drop — Local network file and text sharing
+# LANDrop — Local Network File & Text Sharing
 
 [简体中文](README.md) | [English](README.en.md)
 
-LAN Drop is a Go-based tool for sharing files, text, and clipboard content between devices on the same network. It provides a shared web interface for desktop and mobile browsers, plus CLI commands for sending, receiving, device discovery, and transfer history. No cloud relay service is required.
+LANDrop is a lightweight local-network transfer utility written in Go with an embedded responsive Web UI. It enables instant file, text, and clipboard sharing between PCs, phones, and tablets over the same Wi-Fi or LAN without requiring app installation or cloud relay services.
 
-[Download v2.0.2](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.2) · [Release notes](docs/releases/v2.0.2.md) · [Report an issue](https://github.com/rowanjove/LANDrop/issues)
+[Download v2.0.3](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.3) · [Release Notes](docs/releases/v2.0.3.md) · [Report an Issue](https://github.com/rowanjove/LANDrop/issues)
 
 ## Screenshots
 
-Desktop:
+Desktop interface:
 
-![LANDrop 2.0 desktop home page](docs/screenshots/landrop-2.0-desktop.jpg)
+![LANDrop desktop home page](docs/screenshots/landrop-2.0-desktop.jpg)
 
-Mobile:
+Mobile interface:
 
-<img src="docs/screenshots/landrop-2.0-mobile.jpg" alt="LANDrop 2.0 mobile home page" width="390">
+<img src="docs/screenshots/landrop-2.0-mobile.jpg" alt="LANDrop mobile home page" width="380">
 
-## What's new in 2.0
+## Key Features
 
-- Rebuilt the web interface with Preact, TypeScript, and modular CSS for a shared desktop and mobile experience.
-- Added a file queue that supports adding, removing, or clearing files before an upload starts.
-- Added multi-file transfers with individual downloads and an optional ZIP download.
-- Added a dedicated receive page for previewing, copying, and downloading files or text.
-- Improved progress reporting, cancellation, expiry cleanup, resume support, and one-time token lifecycle handling.
-- Persisted device name, theme, and language settings on the backend.
-- Advertised the correct HTTP or HTTPS scheme through mDNS for device links and QR codes.
-- Automatically opens the browser when `landrop.exe` or `landrop serve` starts; terminal output is now Chinese-first.
+- **Zero-Setup Startup**: Launches directly, opens your default browser automatically, and prints the local IP and QR code in the terminal.
+- **Clientless Experience**: Mobile phones and tablets connect via their built-in browser with automatic device discovery and online status detection.
+- **Send Queue & Batch Transfers**: Supports drag-and-drop file queues, individual file downloads, and on-demand automatic ZIP bundling.
+- **Text & Clipboard Sync**: Share text messages and sync plain-text clipboard contents while preserving formatting and line breaks.
+- **Access Control & Encryption**: Optional 4-digit dynamic PIN verification, self-signed HTTPS/TLS transport, and one-time download links.
+- **Complete CLI Support**: Full command-line interface for headless environments, supporting sending, receiving, resuming downloads, and device scanning.
 
-See the complete [v2.0.0 release notes](docs/releases/v2.0.0.md); the privacy and documentation cleanup is covered in [v2.0.1](docs/releases/v2.0.1.md), and the icon and release-resource refresh is covered in [v2.0.2](docs/releases/v2.0.2.md).
+## Quick Start
 
-## Install and start sharing
+Download the release archive for your platform from [GitHub Releases](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.3) and run:
 
-Release archives are available for Windows amd64, macOS amd64/arm64, and Linux amd64/arm64. Download and extract the archive for your platform.
-
-Windows:
-
+### Windows
+Double-click `landrop.exe`, or run in terminal:
 ```powershell
 .\landrop.exe
 ```
 
-macOS/Linux:
-
+### macOS / Linux
 ```bash
 chmod +x landrop
 ./landrop
 ```
 
-The application opens the local web page automatically and also prints the LAN address and QR code in the terminal. A phone on the same network can scan the QR code to connect. Allow necessary local-network firewall access and do not forward the service port to the public internet.
+The app will print the local URL and QR code in the console. Other devices on the same Wi-Fi can scan or visit the address to start transferring.
 
-## Features
-
-- Select or drag one or more files in the browser.
-- Share text while preserving Unicode, emoji, code, and line breaks.
-- Push and read plain-text clipboard content through the web UI.
-- Discover devices on the LAN using mDNS or connect to an address manually.
-- Protect access with a PIN, HTTPS/TLS, and one-time download links.
-- Inspect transfer progress, status, and local history.
-- Send, receive, and resume file downloads from the CLI.
-
-## Common commands
+## CLI Usage
 
 ```bash
+# Start background server on a specific port
 landrop serve --port 53217
+
+# Send files or directories to the LAN
 landrop send ./photo.jpg ./documents/
-landrop send --text "hello from LAN Drop"
-landrop recv . --target 192.168.1.10:53217
-landrop recv . --continue --target 192.168.1.10:53217
+
+# Send a text message
+landrop send --text "Notification message"
+
+# Receive files into a directory from a target node
+landrop recv ./downloads --target 192.168.1.10:53217
+
+# Resume an interrupted download
+landrop recv ./downloads --continue --target 192.168.1.10:53217
+
+# Enable PIN protection, TLS, and one-time downloads
+landrop serve --pin 8848 --tls --one-time
+
+# Scan for active devices on the local network
 landrop devices
+
+# View recent transfer history
 landrop history --limit 20
 ```
 
-Enable a PIN, TLS, or one-time downloads:
+## Building from Source
+
+Requirements: Go 1.22+ and Node.js 18+.
 
 ```bash
-landrop serve --pin 5231 --tls --one-time
-landrop recv . --pin 5231 --tls --target 192.168.1.10:53217
-```
-
-List all commands:
-
-```bash
-landrop --help
-```
-
-## One-time links and security boundaries
-
-A one-time download token is consumed after a real download completes. Opening a preview, sending a HEAD request, or interrupting an incomplete download does not consume it early.
-
-TLS encrypts transport between a client and the LAN Drop server. The current server generates a temporary self-signed certificate, which triggers browser trust warnings. Some CLI HTTPS requests skip certificate verification, so `--tls` alone does not establish full server identity verification or protection against an active man-in-the-middle attack.
-
-Default commands do not automatically enable a PIN or TLS. Use a trusted LAN, enable protection as needed, and verify the target device. Do not expose LANDrop directly to the public internet.
-
-## Build from source
-
-Requirements: Go 1.25 and Node.js 18 or later.
-
-```bash
+# Clone the repository
 git clone https://github.com/rowanjove/LANDrop.git
-cd LANDrop/web
+cd LANDrop
+
+# Build web frontend assets
+cd web
 npm ci
-npm run typecheck
 npm run build
 cd ..
+
+# Build binary with embedded web assets
 go test ./...
-go build -o landrop .
+go build -ldflags "-s -w" -o landrop .
 ```
 
-On Windows, replace the final command with:
-
+Windows executable:
 ```powershell
-go build -o landrop.exe .
+go build -ldflags "-s -w" -o landrop.exe .
 ```
-
-The frontend output is stored in `web/dist` and embedded into the release binary with `go:embed`; end users do not need Node.js.
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Implementation notes](docs/IMPLEMENTATION.md)
-- [v2.0.0 release notes](docs/releases/v2.0.0.md)
-- [v2.0.1 release notes](docs/releases/v2.0.1.md)
-- [v2.0.2 release notes](docs/releases/v2.0.2.md)
+- [Architecture Design](docs/ARCHITECTURE.md)
+- [v2.0.3 Release Notes](docs/releases/v2.0.3.md)
+- [v2.0.2 Release Notes](docs/releases/v2.0.2.md)
+- [v2.0.1 Release Notes](docs/releases/v2.0.1.md)
+- [v2.0.0 Release Notes](docs/releases/v2.0.0.md)
 
-## Contributing and license
+## License
 
-When reporting an [issue](https://github.com/rowanjove/LANDrop/issues), include the operating system, version, send/receive method, network setup, and reproduction steps. Do not include private files or PINs. Run `go test ./...`, `npm run typecheck`, and `npm run build` before submitting code changes.
-
-Licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE).

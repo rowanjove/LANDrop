@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,9 +29,15 @@ type Device struct {
 	Online   bool   `json:"online"`
 }
 
+type webClientEntry struct {
+	count int
+	dev   *Device
+}
+
 type MDNSManager struct {
 	mu         sync.RWMutex
 	devices    map[string]*Device
+	webClients map[string]*webClientEntry
 	server     *zeroconf.Server
 	broker     *SSEBroker
 	port       int
@@ -46,6 +53,7 @@ func NewMDNSManager(port int, broker *SSEBroker, deviceName string) *MDNSManager
 	}
 	return &MDNSManager{
 		devices:    make(map[string]*Device),
+		webClients: make(map[string]*webClientEntry),
 		broker:     broker,
 		port:       port,
 		deviceName: deviceName,
@@ -219,6 +227,108 @@ func (m *MDNSManager) isSelf(ip string, port int) bool {
 	return ok
 }
 
+func cleanIP(ip string) string {
+	if parsed := net.ParseIP(ip); parsed != nil {
+		if v4 := parsed.To4(); v4 != nil {
+			return v4.String()
+		}
+	}
+	return ip
+}
+
+func (m *MDNSManager) IsLocalIP(ip string) bool {
+	ip = cleanIP(ip)
+	if ip == "127.0.0.1" || ip == "::1" || ip == "localhost" {
+		return true
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, ok := m.localIPs[ip]
+	return ok
+}
+
+func (m *MDNSManager) AddWebClient(ip string, ua string) {
+	ip = cleanIP(ip)
+	if m.IsLocalIP(ip) {
+		return
+	}
+
+	name := "移动设备 (Web)"
+	osType := "web"
+	switch {
+	case strings.Contains(ua, "iPhone"):
+		name = "iPhone (Web)"
+		osType = "ios"
+	case strings.Contains(ua, "iPad"):
+		name = "iPad (Web)"
+		osType = "ios"
+	case strings.Contains(ua, "Android"):
+		name = "Android (Web)"
+		osType = "android"
+	case strings.Contains(ua, "Macintosh") || strings.Contains(ua, "Mac OS X"):
+		name = "Mac (Web)"
+		osType = "darwin"
+	case strings.Contains(ua, "Windows"):
+		name = "Windows (Web)"
+		osType = "windows"
+	case strings.Contains(ua, "Linux"):
+		name = "Linux (Web)"
+		osType = "linux"
+	}
+
+	m.mu.Lock()
+	entry, found := m.webClients[ip]
+	if !found {
+		dev := &Device{
+			Name:     name,
+			Addr:     ip,
+			Scheme:   m.scheme,
+			OS:       osType,
+			Version:  "web",
+			LastSeen: time.Now().Unix(),
+			Online:   true,
+		}
+		m.devices[ip] = dev
+		m.webClients[ip] = &webClientEntry{count: 1, dev: dev}
+		m.mu.Unlock()
+
+		if m.broker != nil {
+			m.broker.Broadcast("device_found", dev)
+		}
+		return
+	}
+
+	entry.count++
+	entry.dev.Online = true
+	entry.dev.LastSeen = time.Now().Unix()
+	m.mu.Unlock()
+}
+
+func (m *MDNSManager) RemoveWebClient(ip string) {
+	ip = cleanIP(ip)
+	m.mu.Lock()
+	entry, found := m.webClients[ip]
+	if !found {
+		m.mu.Unlock()
+		return
+	}
+
+	entry.count--
+	if entry.count <= 0 {
+		delete(m.webClients, ip)
+		entry.dev.Online = false
+		entry.dev.LastSeen = time.Now().Unix()
+		cp := *entry.dev
+		m.mu.Unlock()
+
+		if m.broker != nil {
+			m.broker.Broadcast("device_lost", &cp)
+		}
+		return
+	}
+	m.mu.Unlock()
+}
+
 func parseTXT(entries []string) (string, string, string) {
 	osType := ""
 	serviceVersion := ""
@@ -321,12 +431,19 @@ func (m *MDNSManager) cleanup(ctx context.Context) {
 
 			m.mu.Lock()
 			for addr, dev := range m.devices {
-				age := now.Sub(time.Unix(dev.LastSeen, 0))
-				if dev.Online && age > deviceOfflineAfter {
-					dev.Online = false
-					cp := *dev
-					lost = append(lost, &cp)
+				if dev.Online {
+					if _, isWeb := m.webClients[addr]; isWeb {
+						dev.LastSeen = now.Unix()
+						continue
+					}
+					age := now.Sub(time.Unix(dev.LastSeen, 0))
+					if age > deviceOfflineAfter {
+						dev.Online = false
+						cp := *dev
+						lost = append(lost, &cp)
+					}
 				}
+				age := now.Sub(time.Unix(dev.LastSeen, 0))
 				if age > devicePurgeAfter {
 					delete(m.devices, addr)
 				}

@@ -38,6 +38,23 @@ export interface ShareItem {
   mime_type?: string
 }
 
+export interface ActiveTransferItem {
+  id: string
+  token: string
+  name: string
+  size: number
+  type: 'file' | 'text'
+  status: string
+  created_at: number
+  expires_at?: number
+  items?: ShareItem[]
+}
+
+export async function fetchActiveTransfers(): Promise<ActiveTransferItem[]> {
+  const data = await apiGet<{ transfers: ActiveTransferItem[] }>('/api/v2/transfers')
+  return data.transfers || []
+}
+
 export type UploadTask = Promise<UploadResult> & { abort: () => void }
 
 export function sendFiles(

@@ -295,6 +295,27 @@ func TestHandleIndexServesSharedResponsivePageForAllUserAgents(t *testing.T) {
 	}
 }
 
+func TestHandleIndexServesAssetsAndNestedFallback(t *testing.T) {
+	app := NewApp("", "")
+
+	req := httptest.NewRequest(http.MethodGet, "/assets/landrop-icon.png", nil)
+	rec := httptest.NewRecorder()
+	app.handleIndex(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected /assets/landrop-icon.png to return 200, got %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("expected image/png, got %s", ct)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/r/abc/assets/landrop-icon.png", nil)
+	rec = httptest.NewRecorder()
+	app.handleIndex(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected nested asset fallback to return 200, got %d", rec.Code)
+	}
+}
+
 func TestHandleSendTextRejectsOversizedContent(t *testing.T) {
 	app := NewApp("", "")
 

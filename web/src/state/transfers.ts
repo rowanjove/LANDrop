@@ -1,4 +1,5 @@
 import { fetchHistory, HistoryRecord } from '../api/history.ts'
+import { ActiveTransferItem, fetchActiveTransfers } from '../api/transfers.ts'
 
 export interface PendingFile {
   id: string
@@ -24,6 +25,7 @@ export interface ActiveTransfer {
 export interface TransfersState {
   pendingFiles: PendingFile[]
   activeTransfer: ActiveTransfer | null
+  activeTransfers: ActiveTransferItem[]
   recentHistory: HistoryRecord[]
   loadingHistory: boolean
 }
@@ -31,6 +33,7 @@ export interface TransfersState {
 let state: TransfersState = {
   pendingFiles: [],
   activeTransfer: null,
+  activeTransfers: [],
   recentHistory: [],
   loadingHistory: false,
 }
@@ -95,5 +98,18 @@ export const transfersState = {
       state.loadingHistory = false
       notify()
     }
+  },
+  async refreshActiveTransfers() {
+    try {
+      const items = await fetchActiveTransfers()
+      state.activeTransfers = items.filter((item) => item.status === 'ready')
+      notify()
+    } catch {
+      // ignore
+    }
+  },
+  removeActiveTransfer(token: string) {
+    state.activeTransfers = state.activeTransfers.filter((item) => item.token !== token)
+    notify()
   },
 }

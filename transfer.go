@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -621,6 +622,9 @@ func (s *TransferStore) List() []*Transfer {
 	for _, item := range s.items {
 		result = append(result, cloneTransfer(item))
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt > result[j].CreatedAt
+	})
 	return result
 }
 

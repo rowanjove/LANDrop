@@ -46,7 +46,7 @@ export function Header({ currentPath, onNavigate }: HeaderProps) {
           onClick={() => onNavigate('/')}
         >
           <span className="header-brand-icon">
-            <img src="./assets/landrop-icon.png" alt="" aria-hidden="true" />
+            <img src="/assets/landrop-icon.png" alt="" aria-hidden="true" />
           </span>
           <span>{t('app.title')}</span>
         </div>

@@ -48,7 +48,7 @@ export const devicesState = {
     notify()
   },
   upsertDevice(device: DeviceItem) {
-    const existing = state.devices.findIndex((d) => d.addr === device.addr || (d.name === device.name && d.os === device.os))
+    const existing = state.devices.findIndex((d) => d.addr === device.addr)
     if (existing >= 0) {
       state.devices[existing] = { ...state.devices[existing], ...device }
     } else {

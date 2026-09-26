@@ -154,6 +154,10 @@ export const zhCN = {
     emptyHint: '发送或接收的文件和文本将记录于此',
     textMessage: '文本消息',
     unknownFile: '未知文件',
+    readyTitle: '待下载文件（点击保存到电脑）',
+    readyBadge: '待下载',
+    downloadBtn: '下载',
+    viewBtn: '查看',
   },
   accessibility: {
     mobileNav: '移动端底部导航',
