@@ -1,4 +1,5 @@
-import { SendPanel } from '../components/SendPanel.tsx'
+import { FileSendCard } from '../components/FileSendCard.tsx'
+import { TextClipboardCard } from '../components/TextClipboardCard.tsx'
 import { DeviceList } from '../components/DeviceList.tsx'
 import { TransferList } from '../components/TransferList.tsx'
 
@@ -9,13 +10,14 @@ export interface HomeProps {
 export function Home({ onNavigate }: HomeProps) {
   return (
     <div className="home-grid">
-      {/* Primary Column: Send Panel */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <SendPanel />
+      {/* Primary Column: File Transfer & Text/Clipboard */}
+      <div className="home-col">
+        <FileSendCard />
+        <TextClipboardCard />
       </div>
 
-      {/* Secondary Column: Nearby Devices & Recent Transfers */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* Secondary Column: Nearby Devices & Current Transfers */}
+      <div className="home-col">
         <DeviceList />
         <TransferList onViewAll={() => onNavigate('/activity')} />
       </div>

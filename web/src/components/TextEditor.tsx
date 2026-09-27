@@ -1,9 +1,10 @@
-import { useState } from 'preact/hooks'
+import { useRef, useState } from 'preact/hooks'
 import { Button } from './Button.tsx'
 import { IconButton } from './IconButton.tsx'
 import { IconCheck, IconClipboard, IconCopy, IconQr, IconSend } from './Icons.tsx'
 import { QRDialog } from './QRDialog.tsx'
 import { formatSize } from '../utils/format.ts'
+import { copyText, readText } from '../utils/clipboard.ts'
 import { sendText, getShareUrl } from '../api/transfers.ts'
 import { transfersState } from '../state/transfers.ts'
 import { toast } from './Toast.tsx'
@@ -15,18 +16,20 @@ export function TextEditor() {
   const [readyToken, setReadyToken] = useState<string | null>(null)
   const [qrOpen, setQrOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const byteSize = new Blob([text]).size
   const isUrl = /^(https?:\/\/[^\s]+)$/i.test(text.trim())
 
   const handlePaste = async () => {
     try {
-      const clipText = await navigator.clipboard.readText()
+      const clipText = await readText()
       if (clipText) {
         setText(clipText)
       }
     } catch {
-      toast.error(t('clipboard.pasteFailed'))
+      textareaRef.current?.focus()
+      toast.info(t('clipboard.pasteHint'))
     }
   }
 
@@ -49,12 +52,12 @@ export function TextEditor() {
   const handleCopyLink = async () => {
     if (!readyToken) return
     const url = getShareUrl(readyToken)
-    try {
-      await navigator.clipboard.writeText(url)
+    const ok = await copyText(url)
+    if (ok) {
       setCopied(true)
       toast.success(t('send.copiedLink'))
       setTimeout(() => setCopied(false), 2000)
-    } catch {
+    } else {
       toast.error(t('send.copyFailed'))
     }
   }
@@ -128,6 +131,7 @@ export function TextEditor() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <textarea
+        ref={textareaRef}
         className="textarea"
         placeholder={t('text.placeholder')}
         value={text}

@@ -81,6 +81,11 @@
   border-radius: var(--radius-md);
   color: var(--text-secondary);
 }
+.btn-icon.btn-sm {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
 .btn-icon:hover:not(:disabled) {
   background-color: var(--surface-hover);
   color: var(--text);
@@ -361,11 +366,16 @@
 .dropzone {
   border: 2px dashed var(--border-strong);
   border-radius: var(--radius-md);
-  padding: 28px 16px;
+  padding: 22px 16px;
   text-align: center;
   background: var(--surface-subtle);
   cursor: pointer;
   transition: border-color 0.15s ease, background-color 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
 }
 
 .dropzone:hover, .dropzone.dragover {

@@ -1,6 +1,8 @@
 import { DeviceItem } from '../api/devices.ts'
+import { appState } from '../state/app.ts'
 import { formatTime } from '../utils/format.ts'
 import { IconDevice, IconGlobe, IconMobile } from './Icons.tsx'
+import { toast } from './Toast.tsx'
 import { t } from '../locales/index.ts'
 
 export interface DeviceRowProps {
@@ -19,8 +21,16 @@ function getDeviceIcon(os?: string, version?: string) {
 }
 
 export function DeviceRow({ device }: DeviceRowProps) {
+  const currentAppName = appState.get().info?.name
+  const isSelf = Boolean(device.is_self || (currentAppName && device.name === currentAppName))
+  const isOnline = isSelf || device.online
   const isWebClient = device.version === 'web'
+
   const handleClick = () => {
+    if (isSelf) {
+      toast.info(t('devices.thisDeviceHint'))
+      return
+    }
     if (isWebClient) return
     let url = device.addr
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -35,11 +45,11 @@ export function DeviceRow({ device }: DeviceRowProps) {
       className="item-row"
       onClick={handleClick}
       style={{
-        cursor: isWebClient ? 'default' : 'pointer',
-        opacity: device.online ? 1 : 0.6,
+        cursor: isWebClient || isSelf ? 'default' : 'pointer',
+        opacity: isOnline ? 1 : 0.6,
         padding: '10px 14px',
       }}
-      title={isWebClient ? undefined : t('devices.openDevice')}
+      title={isSelf ? t('devices.thisDeviceHint') : isWebClient ? undefined : t('devices.openDevice')}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
         <div
@@ -52,14 +62,14 @@ export function DeviceRow({ device }: DeviceRowProps) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: device.online ? 'var(--accent)' : 'var(--text-muted)',
+            color: isOnline ? 'var(--accent)' : 'var(--text-muted)',
             flexShrink: 0,
             position: 'relative',
           }}
         >
           {getDeviceIcon(device.os, device.version)}
           <span
-            className={`status-dot ${device.online ? 'online' : 'offline'}`}
+            className={`status-dot ${isOnline ? 'online' : 'offline'}`}
             style={{
               position: 'absolute',
               bottom: '-2px',
@@ -76,9 +86,31 @@ export function DeviceRow({ device }: DeviceRowProps) {
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
           >
-            {device.name}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{device.name}</span>
+            {isSelf && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '1px 6px',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  borderRadius: '10px',
+                  background: 'var(--accent-subtle)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
+                  lineHeight: '1.2',
+                  flexShrink: 0,
+                }}
+              >
+                {t('devices.thisDevice')}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
             {device.os || 'LAN'} · {device.addr}
@@ -87,7 +119,7 @@ export function DeviceRow({ device }: DeviceRowProps) {
       </div>
 
       <div style={{ flexShrink: 0, textAlign: 'right' }}>
-        {device.online ? (
+        {isOnline ? (
           <span style={{ fontSize: '11px', color: 'var(--success)' }}>{t('devices.online')}</span>
         ) : (
           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>

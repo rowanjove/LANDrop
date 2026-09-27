@@ -378,3 +378,29 @@ func TestApiV2RoutesMountedAndFunctional(t *testing.T) {
 		t.Fatalf("GET /api/v2/history status = %d, want %d", histRec.Code, http.StatusOK)
 	}
 }
+
+func TestIsNewerVersion(t *testing.T) {
+	cases := []struct {
+		current string
+		latest  string
+		want    bool
+	}{
+		{"2.0.3", "2.0.3", false},
+		{"2.0.3", "2.0.4", true},
+		{"2.0.4", "2.0.4", false},
+		{"2.0.4", "2.0.5", true},
+		{"2.0.3", "2.1.0", true},
+		{"2.0.3", "3.0.0", true},
+		{"2.0.3", "2.0.2", false},
+		{"2.0.4", "2.0.3", false},
+		{"2.0.3", "1.9.9", false},
+		{"2.0.3", "", false},
+	}
+	for _, tc := range cases {
+		got := isNewerVersion(tc.current, tc.latest)
+		if got != tc.want {
+			t.Errorf("isNewerVersion(%q, %q) = %v, want %v", tc.current, tc.latest, got, tc.want)
+		}
+	}
+}
+

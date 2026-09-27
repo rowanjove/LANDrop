@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { Button } from './Button.tsx'
 import { IconClipboard, IconRefresh, IconSend } from './Icons.tsx'
 import { fetchClipboard, pushClipboard } from '../api/transfers.ts'
+import { readText } from '../utils/clipboard.ts'
 import { toast } from './Toast.tsx'
 import { t } from '../locales/index.ts'
 
@@ -9,6 +10,7 @@ export function ClipboardPanel() {
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
   const [pushing, setPushing] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const loadServerClipboard = async () => {
     setLoading(true)
@@ -24,7 +26,7 @@ export function ClipboardPanel() {
 
   const readLocalClipboard = async () => {
     try {
-      const text = await navigator.clipboard.readText()
+      const text = await readText()
       if (text) {
         setContent(text)
         toast.info(t('clipboard.readSuccess'))
@@ -32,7 +34,8 @@ export function ClipboardPanel() {
         toast.info(t('clipboard.empty'))
       }
     } catch {
-      toast.error(t('clipboard.readError'))
+      textareaRef.current?.focus()
+      toast.info(t('clipboard.pasteHint'))
     }
   }
 
@@ -70,6 +73,7 @@ export function ClipboardPanel() {
       </div>
 
       <textarea
+        ref={textareaRef}
         className="textarea"
         placeholder={t('clipboard.empty')}
         value={content}

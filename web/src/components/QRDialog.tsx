@@ -3,6 +3,7 @@ import { Dialog } from './Dialog.tsx'
 import { Button } from './Button.tsx'
 import { IconCheck, IconCopy } from './Icons.tsx'
 import { getQRUrl } from '../api/transfers.ts'
+import { copyText } from '../utils/clipboard.ts'
 import { toast } from './Toast.tsx'
 import { t } from '../locales/index.ts'
 
@@ -18,12 +19,12 @@ export function QRDialog({ open, onClose, deviceName, address }: QRDialogProps) 
   const fullAddress = address ? (address.startsWith('http') ? address : `http://${address}`) : window.location.origin
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(fullAddress)
+    const ok = await copyText(fullAddress)
+    if (ok) {
       setCopied(true)
       toast.success(t('header.copiedAddress'))
       setTimeout(() => setCopied(false), 2000)
-    } catch {
+    } else {
       toast.error(t('clipboard.pushFailed'))
     }
   }

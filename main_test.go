@@ -146,3 +146,47 @@ func TestParseContentRange(t *testing.T) {
 		t.Fatal("parseContentRange(\"\") = ok, want false")
 	}
 }
+
+func TestIsVirtualInterface(t *testing.T) {
+	virtuals := []string{
+		"vEthernet (Default Switch)",
+		"VMware Network Adapter VMnet1",
+		"VirtualBox Host-Only Ethernet Adapter",
+		"docker0",
+		"tailscale0",
+		"tun0",
+		"tap0",
+	}
+	for _, name := range virtuals {
+		if !isVirtualInterface(name) {
+			t.Errorf("isVirtualInterface(%q) = false, want true", name)
+		}
+	}
+
+	physicals := []string{
+		"以太网",
+		"WLAN",
+		"Wi-Fi",
+		"eth0",
+		"en0",
+		"wlan0",
+	}
+	for _, name := range physicals {
+		if isVirtualInterface(name) {
+			t.Errorf("isVirtualInterface(%q) = true, want false", name)
+		}
+	}
+}
+
+func TestGetAllLocalIPs(t *testing.T) {
+	ips := GetAllLocalIPs()
+	if len(ips) == 0 {
+		t.Fatal("GetAllLocalIPs() returned empty slice")
+	}
+	for _, ip := range ips {
+		if ip == "" {
+			t.Errorf("GetAllLocalIPs() contains empty string")
+		}
+	}
+}
+

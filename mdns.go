@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	deviceOfflineAfter = 30 * time.Second
+	deviceOfflineAfter = 60 * time.Second
 	devicePurgeAfter   = 24 * time.Hour
 )
 
@@ -27,6 +27,7 @@ type Device struct {
 	Version  string `json:"version"`
 	LastSeen int64  `json:"last_seen"`
 	Online   bool   `json:"online"`
+	IsSelf   bool   `json:"is_self,omitempty"`
 }
 
 type webClientEntry struct {
@@ -219,15 +220,10 @@ func (m *MDNSManager) UpdateDeviceName(name string) error {
 	return nil
 }
 
-func (m *MDNSManager) isSelf(ip string, port int) bool {
-	if port != m.port || port == 0 {
-		return false
-	}
-	_, ok := m.localIPs[ip]
-	return ok
-}
-
 func cleanIP(ip string) string {
+	if host, _, err := net.SplitHostPort(ip); err == nil {
+		ip = host
+	}
 	if parsed := net.ParseIP(ip); parsed != nil {
 		if v4 := parsed.To4(); v4 != nil {
 			return v4.String()
@@ -242,9 +238,30 @@ func (m *MDNSManager) IsLocalIP(ip string) bool {
 		return true
 	}
 	m.mu.RLock()
-	defer m.mu.RUnlock()
 	_, ok := m.localIPs[ip]
-	return ok
+	m.mu.RUnlock()
+	if ok {
+		return true
+	}
+
+	currentIPs := getLocalIPv4s()
+	if _, found := currentIPs[ip]; found {
+		m.mu.Lock()
+		m.localIPs = currentIPs
+		m.mu.Unlock()
+		return true
+	}
+	return false
+}
+
+func (m *MDNSManager) isSelf(ip string, port int, instanceName string) bool {
+	if instanceName != "" && instanceName == m.deviceName && (port == m.port || port == 0) {
+		return true
+	}
+	if port != m.port || port == 0 {
+		return false
+	}
+	return m.IsLocalIP(ip)
 }
 
 func (m *MDNSManager) AddWebClient(ip string, ua string) {
@@ -349,6 +366,12 @@ func parseTXT(entries []string) (string, string, string) {
 }
 
 func (m *MDNSManager) discover(ctx context.Context) {
+	resolver, err := zeroconf.NewResolver(nil)
+	if err != nil {
+		log.Printf("mDNS 解析器错误：%v", err)
+		return
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -356,24 +379,32 @@ func (m *MDNSManager) discover(ctx context.Context) {
 		default:
 		}
 
-		resolver, err := zeroconf.NewResolver(nil)
-		if err != nil {
-			log.Printf("mDNS 解析器错误：%v", err)
-			time.Sleep(10 * time.Second)
-			continue
-		}
-
-		entries := make(chan *zeroconf.ServiceEntry)
+		entries := make(chan *zeroconf.ServiceEntry, 16)
+		done := make(chan struct{})
 		go func() {
+			defer close(done)
 			for entry := range entries {
 				if len(entry.AddrIPv4) == 0 {
 					continue
 				}
 
-				ip := entry.AddrIPv4[0].String()
-				if m.isSelf(ip, entry.Port) {
+				isSelfEntry := false
+				if entry.Instance == m.deviceName && (entry.Port == m.port || entry.Port == 0) {
+					isSelfEntry = true
+				} else {
+					for _, entryIP := range entry.AddrIPv4 {
+						if m.isSelf(entryIP.String(), entry.Port, entry.Instance) {
+							isSelfEntry = true
+							break
+						}
+					}
+				}
+
+				if isSelfEntry {
 					continue
 				}
+
+				ip := entry.AddrIPv4[0].String()
 
 				addr := fmt.Sprintf("%s:%d", ip, entry.Port)
 				osType, serviceVersion, scheme := parseTXT(entry.Text)
@@ -412,8 +443,13 @@ func (m *MDNSManager) discover(ctx context.Context) {
 		}
 		<-browseCtx.Done()
 		browseCancel()
+		<-done
 
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
 	}
 }
 
@@ -431,6 +467,11 @@ func (m *MDNSManager) cleanup(ctx context.Context) {
 
 			m.mu.Lock()
 			for addr, dev := range m.devices {
+				if dev.IsSelf || dev.Name == m.deviceName {
+					dev.Online = true
+					dev.LastSeen = now.Unix()
+					continue
+				}
 				if dev.Online {
 					if _, isWeb := m.webClients[addr]; isWeb {
 						dev.LastSeen = now.Unix()
@@ -463,13 +504,35 @@ func (m *MDNSManager) GetDevices() []*Device {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	result := make([]*Device, 0, len(m.devices))
+	now := time.Now().Unix()
+	result := make([]*Device, 0, len(m.devices)+1)
+
+	// 本机设备始终存在且置顶，状态永远是 Online
+	selfAddr := fmt.Sprintf("%s:%d", getLocalIP(), m.port)
+	selfDev := &Device{
+		Name:     m.deviceName,
+		Addr:     selfAddr,
+		Scheme:   m.scheme,
+		OS:       getOS(),
+		Version:  version,
+		LastSeen: now,
+		Online:   true,
+		IsSelf:   true,
+	}
+	result = append(result, selfDev)
+
 	for _, dev := range m.devices {
+		if dev.IsSelf || dev.Name == m.deviceName || m.isSelf(dev.Addr, m.port, dev.Name) {
+			continue
+		}
 		cp := *dev
 		result = append(result, &cp)
 	}
 
 	sort.Slice(result, func(i, j int) bool {
+		if result[i].IsSelf != result[j].IsSelf {
+			return result[i].IsSelf
+		}
 		if result[i].Online != result[j].Online {
 			return result[i].Online
 		}

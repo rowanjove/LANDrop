@@ -2,38 +2,47 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-LANDrop is a lightweight local-network transfer utility written in Go with an embedded responsive Web UI. It enables instant file, text, and clipboard sharing between PCs, phones, and tablets over the same Wi-Fi or LAN without requiring app installation or cloud relay services.
+LANDrop is a lightweight local-network transfer utility written in Go with an embedded responsive Web UI.
 
-[Download v2.0.3](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.3) · [Release Notes](docs/releases/v2.0.3.md) · [Report an Issue](https://github.com/rowanjove/LANDrop/issues)
+Connect PCs, Macs, Linux workstations, iPhones, Android devices, and tablets over the same Wi-Fi or LAN with zero app installations, no third-party cloud relays, and full wire-speed peer-to-peer performance.
+
+[Download v2.0.4](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.4) · [Release Notes](docs/releases/v2.0.4.md) · [Architecture Design](docs/ARCHITECTURE.md) · [Report an Issue](https://github.com/rowanjove/LANDrop/issues)
 
 ## Screenshots
 
-Desktop interface:
+Desktop interface (two-column responsive cards):
 
 ![LANDrop desktop home page](docs/screenshots/landrop-2.0-desktop.jpg)
 
-Mobile interface:
+Mobile interface (instant browser scan, fluid single column):
 
 <img src="docs/screenshots/landrop-2.0-mobile.jpg" alt="LANDrop mobile home page" width="380">
 
 ## Key Features
 
-- **Zero-Setup Startup**: Launches directly, opens your default browser automatically, and prints the local IP and QR code in the terminal.
-- **Clientless Experience**: Mobile phones and tablets connect via their built-in browser with automatic device discovery and online status detection.
-- **Send Queue & Batch Transfers**: Supports drag-and-drop file queues, individual file downloads, and on-demand automatic ZIP bundling.
-- **Text & Clipboard Sync**: Share text messages and sync plain-text clipboard contents while preserving formatting and line breaks.
-- **Access Control & Encryption**: Optional 4-digit dynamic PIN verification, self-signed HTTPS/TLS transport, and one-time download links.
-- **Complete CLI Support**: Full command-line interface for headless environments, supporting sending, receiving, resuming downloads, and device scanning.
+- **Clientless Access**: Mobile devices connect via their native browser by scanning a QR code, complete with real-time peer discovery and online status sensing.
+- **Windows System Tray Resident**: Automatically hides the command prompt window and stays resident in the Windows system tray. Right-click the tray icon to quickly open the Web UI, copy the local URL, toggle the console window, or exit cleanly.
+- **Single-Instance Guardian**: Prevents port conflicts through PID-based mutex and local shutdown protocol, smoothly taking over existing instances.
+- **Two-Column Card Layout**: Left column features file drag-and-drop queues and clipboard/text messaging; right column displays active local devices and ready-to-download items.
+- **Smart Network Detection**: Filters out virtual network interfaces (Docker, WSL, VMware, Hyper-V, Tailscale) and prioritizes physical LAN IPv4 addresses while listing backup network endpoints.
+- **Maximized Wire Speed**: Large files stream directly via HTTP; directory and batch transfers use uncompressed `zip.Store` streaming to minimize CPU usage and saturate local bandwidth.
+- **Timing-Safe Protection**: 4-digit dynamic PIN with `crypto/subtle.ConstantTimeCompare`, exponential lockout backoff, self-signed TLS, and one-time links.
+- **Complete CLI Mode**: Full headless support for headless servers and terminal environments with `send`, `recv`, resume, and device scanning.
 
 ## Quick Start
 
-Download the release archive for your platform from [GitHub Releases](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.3) and run:
+Download the release archive for your platform from [GitHub Releases](https://github.com/rowanjove/LANDrop/releases/tag/v2.0.4) and run:
 
 ### Windows
-Double-click `landrop.exe`, or run in terminal:
+Double-click `landrop.exe` (starts silently in the tray by default), or run in terminal:
 ```powershell
 .\landrop.exe
 ```
+
+Optional flags:
+- `.\landrop.exe --console`: Keep the command prompt window visible
+- `.\landrop.exe --no-tray`: Disable the system tray icon
+- `.\landrop.exe --port 53217`: Specify custom port
 
 ### macOS / Linux
 ```bash
@@ -41,16 +50,16 @@ chmod +x landrop
 ./landrop
 ```
 
-The app will print the local URL and QR code in the console. Other devices on the same Wi-Fi can scan or visit the address to start transferring.
+The app will print local URLs and a terminal QR code. Other devices on the same Wi-Fi can scan or visit the address to start transferring immediately.
 
 ## CLI Usage
 
 ```bash
-# Start background server on a specific port
+# Start background server on a custom port
 landrop serve --port 53217
 
-# Send files or directories to the LAN
-landrop send ./photo.jpg ./documents/
+# Send files or directories to the LAN (or drag files onto the binary directly)
+landrop send ./document.pdf ./photos/
 
 # Send a text message
 landrop send --text "Notification message"
@@ -61,7 +70,7 @@ landrop recv ./downloads --target 192.168.1.10:53217
 # Resume an interrupted download
 landrop recv ./downloads --continue --target 192.168.1.10:53217
 
-# Enable PIN protection, TLS, and one-time downloads
+# Enable PIN protection, TLS, and one-time links
 landrop serve --pin 8848 --tls --one-time
 
 # Scan for active devices on the local network
@@ -86,12 +95,14 @@ npm ci
 npm run build
 cd ..
 
-# Build binary with embedded web assets
+# Run automated tests
 go test ./...
+
+# Build binary with embedded web assets
 go build -ldflags "-s -w" -o landrop .
 ```
 
-Windows executable:
+Windows executable (with embedded icon resources):
 ```powershell
 go build -ldflags "-s -w" -o landrop.exe .
 ```
@@ -99,6 +110,7 @@ go build -ldflags "-s -w" -o landrop.exe .
 ## Documentation
 
 - [Architecture Design](docs/ARCHITECTURE.md)
+- [v2.0.4 Release Notes](docs/releases/v2.0.4.md)
 - [v2.0.3 Release Notes](docs/releases/v2.0.3.md)
 - [v2.0.2 Release Notes](docs/releases/v2.0.2.md)
 - [v2.0.1 Release Notes](docs/releases/v2.0.1.md)

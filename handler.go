@@ -17,6 +17,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -57,6 +58,8 @@ type App struct {
 	systemName string
 	config     *ConfigStore
 	oneTimeUse bool // Token one-time-use mode (SEC-02)
+	startedAt  int64
+	onExit     func()
 }
 
 func NewApp(addr string, pin string) *App {
@@ -77,6 +80,7 @@ func NewApp(addr string, pin string) *App {
 		hostname:   deviceName,
 		systemName: hostname,
 		config:     config,
+		startedAt:  time.Now().Unix(),
 	}
 }
 
@@ -118,6 +122,8 @@ func (a *App) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v2/share/{token}", a.handleShareInfo)
 	mux.HandleFunc("GET /api/v2/share/{token}/items/{itemID}", a.handleRecv)
 	mux.HandleFunc("GET /api/v2/share/{token}/zip", a.handleRecv)
+	mux.HandleFunc("GET /api/v2/version/check", a.handleVersionCheck)
+	mux.HandleFunc("POST /api/shutdown", a.handleShutdown)
 }
 
 func (a *App) handleSettingsRoute(w http.ResponseWriter, r *http.Request) {
@@ -158,8 +164,10 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err == nil {
-		if strings.HasPrefix(cleanPath, "assets/") {
+		if strings.HasPrefix(cleanPath, "assets/") && !strings.HasSuffix(cleanPath, "landrop-icon.png") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		switch {
 		case strings.HasSuffix(cleanPath, ".js"):
@@ -183,12 +191,91 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store, max-age=0")
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"name":     a.hostname,
-		"version":  version,
-		"os":       getOS(),
-		"addr":     a.addr,
-		"one_time": a.oneTimeUse,
+		"name":       a.hostname,
+		"version":    version,
+		"os":         getOS(),
+		"addr":       a.addr,
+		"one_time":   a.oneTimeUse,
+		"started_at": a.startedAt,
 	})
+}
+
+func (a *App) handleVersionCheck(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/rowanjove/LANDrop/releases/latest", nil)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"current_version": version,
+			"error":           err.Error(),
+		})
+		return
+	}
+	req.Header.Set("User-Agent", "LANDrop/"+version)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"current_version": version,
+			"error":           "无法连接到更新服务器",
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"current_version": version,
+			"error":           fmt.Sprintf("HTTP %d", resp.StatusCode),
+		})
+		return
+	}
+
+	var ghRelease struct {
+		TagName string `json:"tag_name"`
+		Name    string `json:"name"`
+		Body    string `json:"body"`
+		HTMLURL string `json:"html_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&ghRelease); err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"current_version": version,
+			"error":           "解析更新信息失败",
+		})
+		return
+	}
+
+	latestTag := strings.TrimPrefix(ghRelease.TagName, "v")
+	hasUpdate := isNewerVersion(version, latestTag)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"current_version": version,
+		"latest_version":  latestTag,
+		"has_update":      hasUpdate,
+		"release_url":     ghRelease.HTMLURL,
+		"release_notes":   ghRelease.Body,
+	})
+}
+
+func isNewerVersion(current, latest string) bool {
+	if latest == "" || current == latest {
+		return false
+	}
+	cParts := strings.Split(current, ".")
+	lParts := strings.Split(latest, ".")
+	for i := 0; i < len(cParts) && i < len(lParts); i++ {
+		cV, cErr := strconv.Atoi(cParts[i])
+		lV, lErr := strconv.Atoi(lParts[i])
+		if cErr == nil && lErr == nil {
+			if lV > cV {
+				return true
+			} else if lV < cV {
+				return false
+			}
+		}
+	}
+	return len(lParts) > len(cParts)
 }
 
 func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
@@ -636,13 +723,31 @@ func (a *App) handleRecvItem(w http.ResponseWriter, r *http.Request, token strin
 	}
 	outcome := DownloadReleased
 	defer func() { a.store.FinishDownload(token, outcome, r.RemoteAddr) }()
-	var err error
-	_, err = a.serveFile(w, r, child)
+	downloadOutcome, err := a.serveFile(w, r, child)
 	// Item downloads are independent in a multi-file transfer. Keep the
 	// aggregate transfer available for subsequent item downloads and ZIP export.
 	outcome = DownloadReleased
 	if err != nil {
+		AppendHistory(&HistoryRecord{
+			Direction: "send",
+			Name:      selected.Name,
+			Size:      selected.Size,
+			Type:      "file",
+			Status:    "failed",
+			Peer:      r.RemoteAddr,
+		})
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "file read error"})
+		return
+	}
+	if downloadOutcome == DownloadCompleted {
+		AppendHistory(&HistoryRecord{
+			Direction: "send",
+			Name:      selected.Name,
+			Size:      selected.Size,
+			Type:      "file",
+			Status:    "success",
+			Peer:      r.RemoteAddr,
+		})
 	}
 }
 
@@ -762,7 +867,7 @@ func (a *App) serveZip(w http.ResponseWriter, r *http.Request, item *TransferIte
 	zipWriter := zip.NewWriter(tw)
 	var transferred int64
 	for _, file := range item.Items {
-		header := &zip.FileHeader{Name: sanitizeFilename(file.Name), Method: zip.Deflate}
+		header := &zip.FileHeader{Name: sanitizeFilename(file.Name), Method: zip.Store}
 		header.UncompressedSize64 = uint64(maxInt64(file.Size, 0))
 		writer, err := zipWriter.CreateHeader(header)
 		if err != nil {
@@ -986,3 +1091,34 @@ func (a *App) sendDirectory(dirPath string, dirName string) (*TransferItem, erro
 	cleanupTemp = false
 	return item, nil
 }
+
+func (a *App) SetOnExit(fn func()) {
+	a.onExit = fn
+}
+
+func (a *App) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		clientIP = r.RemoteAddr
+	}
+	cleanClientIP := cleanIP(clientIP)
+	if cleanClientIP != "127.0.0.1" && cleanClientIP != "::1" && cleanClientIP != "localhost" {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{
+			"error": "shutdown only allowed from loopback",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "shutting_down",
+	})
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		if a.onExit != nil {
+			a.onExit()
+		}
+		os.Exit(0)
+	}()
+}
+

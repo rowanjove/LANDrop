@@ -8,6 +8,7 @@ export interface DeviceItem {
   version?: string
   online: boolean
   last_seen?: number
+  is_self?: boolean
 }
 
 interface DevicesResponse {

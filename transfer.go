@@ -302,8 +302,16 @@ func (s *TransferStore) AddMultiFiles(files []TransferFile) (*Transfer, error) {
 
 	cleaned := make([]TransferFile, 0, len(files))
 	var total int64
+	usedNames := make(map[string]int)
 	for _, file := range files {
 		name := sanitizeFilename(file.Name)
+		count := usedNames[name]
+		usedNames[name] = count + 1
+		if count > 0 {
+			ext := filepath.Ext(name)
+			stem := strings.TrimSuffix(name, ext)
+			name = fmt.Sprintf("%s (%d)%s", stem, count, ext)
+		}
 		if file.FilePath == "" && file.Content == nil {
 			return nil, fmt.Errorf("file %q has no content", name)
 		}

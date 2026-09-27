@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"net"
 	"net/http"
@@ -18,8 +19,24 @@ type PINManager struct {
 }
 
 type attemptInfo struct {
-	count    int
-	lockedAt time.Time
+	count            int
+	consecutiveLocks int
+	lockedAt         time.Time
+}
+
+func (info *attemptInfo) currentLockDuration() time.Duration {
+	shift := info.consecutiveLocks - 1
+	if shift < 0 {
+		shift = 0
+	}
+	if shift > 5 {
+		shift = 5
+	}
+	d := lockDuration * time.Duration(1<<shift)
+	if d > 30*time.Minute {
+		d = 30 * time.Minute
+	}
+	return d
 }
 
 type sessionInfo struct {
@@ -56,14 +73,15 @@ func (p *PINManager) Verify(ip string, inputPIN string) (bool, int, bool) {
 
 	info, exists := p.attempts[ip]
 	if exists && info.count >= maxAttempts {
-		if time.Since(info.lockedAt) < lockDuration {
+		dur := info.currentLockDuration()
+		if time.Since(info.lockedAt) < dur {
 			return false, 0, true // locked
 		}
-		// Reset after lock duration
+		// Reset count after lock duration, but keep consecutiveLocks to escalate if wrong again
 		info.count = 0
 	}
 
-	if inputPIN == p.pin {
+	if subtle.ConstantTimeCompare([]byte(inputPIN), []byte(p.pin)) == 1 {
 		if exists {
 			delete(p.attempts, ip)
 		}
@@ -78,6 +96,7 @@ func (p *PINManager) Verify(ip string, inputPIN string) (bool, int, bool) {
 	info.count++
 	remaining := maxAttempts - info.count
 	if info.count >= maxAttempts {
+		info.consecutiveLocks++
 		info.lockedAt = time.Now()
 		return false, 0, true
 	}
@@ -154,7 +173,7 @@ func (p *PINManager) Middleware(next http.Handler) http.Handler {
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   r.TLS != nil,
-			SameSite: http.SameSiteStrictMode,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   int(sessionTTL.Seconds()),
 		})
 

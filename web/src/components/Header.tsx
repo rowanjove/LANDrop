@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'preact/hooks'
 import { appState, AppState } from '../state/app.ts'
 import { Button } from './Button.tsx'
-import { IconDevice, IconHistory, IconQr, IconSettings } from './Icons.tsx'
+import { IconButton } from './IconButton.tsx'
+import { IconDevice, IconQr, IconSettings } from './Icons.tsx'
 import { QRDialog } from './QRDialog.tsx'
 import { Dialog } from './Dialog.tsx'
+import { copyText } from '../utils/clipboard.ts'
 import { toast } from './Toast.tsx'
 import { t } from '../locales/index.ts'
+import logoIcon from '../assets/landrop-icon.png'
 
 export interface HeaderProps {
   currentPath: string
@@ -29,10 +32,10 @@ export function Header({ currentPath, onNavigate }: HeaderProps) {
     : `${window.location.protocol}//${addr}`
 
   const handleCopyAddr = async () => {
-    try {
-      await navigator.clipboard.writeText(addressUrl)
+    const ok = await copyText(addressUrl)
+    if (ok) {
       toast.success(t('header.copiedAddress'))
-    } catch {
+    } else {
       toast.error(t('send.copyFailed'))
     }
   }
@@ -46,12 +49,21 @@ export function Header({ currentPath, onNavigate }: HeaderProps) {
           onClick={() => onNavigate('/')}
         >
           <span className="header-brand-icon">
-            <img src="/assets/landrop-icon.png" alt="" aria-hidden="true" />
+            <img src={logoIcon} alt="" aria-hidden="true" />
           </span>
           <span>{t('app.title')}</span>
         </div>
 
         <nav className="header-nav">
+          {/* Quick QR Connect Button */}
+          <IconButton
+            variant="secondary"
+            size="sm"
+            onClick={() => setQrOpen(true)}
+            icon={<IconQr size={15} />}
+            aria-label={t('header.qrConnect')}
+          />
+
           {/* Current Device Pill */}
           <Button
             variant="secondary"
@@ -66,14 +78,6 @@ export function Header({ currentPath, onNavigate }: HeaderProps) {
 
           {/* Desktop Navigation Items */}
           <div className="desktop-nav-items">
-            <Button
-              variant={currentPath === '/activity' ? 'secondary' : 'ghost'}
-              size="sm"
-              icon={<IconHistory size={15} />}
-              onClick={() => onNavigate('/activity')}
-            >
-              {t('nav.activity')}
-            </Button>
             <Button
               variant={currentPath === '/settings' ? 'secondary' : 'ghost'}
               size="sm"

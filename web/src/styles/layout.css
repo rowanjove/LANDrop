@@ -81,7 +81,22 @@
   display: grid;
   grid-template-columns: minmax(0, 1.8fr) minmax(280px, 1.2fr);
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
+}
+
+.home-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.home-col > .panel-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.home-col > .panel-section:last-child {
+  flex: 1;
 }
 
 .panel-section {
@@ -151,10 +166,27 @@
   .home-grid {
     grid-template-columns: 1fr;
     gap: 16px;
+    align-items: start;
+  }
+
+  .home-col {
+    gap: 16px;
+  }
+
+  .home-col > .panel-section:last-child {
+    flex: initial;
+  }
+
+  .panel-header {
+    padding: 10px 14px;
+  }
+
+  .panel-body {
+    padding: 12px 14px;
   }
 
   .main-wrapper {
-    padding: 12px 12px 68px;
+    padding: 12px 12px 76px;
   }
 
   .mobile-nav {
@@ -167,16 +199,19 @@
 
   .btn,
   .tab-btn {
-    min-height: 44px;
+    min-height: 40px;
   }
 
   .btn.btn-sm {
-    min-height: 44px;
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 12px;
   }
 
-  .btn.btn-icon {
-    width: 44px;
-    height: 44px;
-    min-height: 44px;
+  .btn.btn-icon.btn-sm {
+    width: 32px;
+    height: 32px;
+    min-height: 32px;
+    padding: 0;
   }
 }

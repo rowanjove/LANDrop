@@ -100,13 +100,26 @@ export function useEvents() {
     transfersState.refreshHistory(10)
     connect()
 
-    // 30s low-frequency fallback polling
-    fallbackInterval = setInterval(() => {
-      devicesState.refresh()
-    }, 30000)
+    // Refresh immediately when returning to the tab or focusing window
+    function handleActive() {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        devicesState.refresh()
+        transfersState.refreshActiveTransfers()
+        transfersState.refreshHistory(10)
+        appState.loadInfo()
+        if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+          connect()
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleActive)
+    window.addEventListener('focus', handleActive)
 
     return () => {
       isMounted = false
+      document.removeEventListener('visibilitychange', handleActive)
+      window.removeEventListener('focus', handleActive)
       if (eventSource) {
         eventSource.close()
       }

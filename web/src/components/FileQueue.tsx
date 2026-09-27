@@ -5,6 +5,7 @@ import { ProgressBar } from './ProgressBar.tsx'
 import { IconCheck, IconClose, IconCopy, IconFile, IconPlus, IconQr, IconSend } from './Icons.tsx'
 import { QRDialog } from './QRDialog.tsx'
 import { formatSize, formatSpeed, formatEta } from '../utils/format.ts'
+import { copyText } from '../utils/clipboard.ts'
 import { sendFiles, getShareUrl, UploadTask } from '../api/transfers.ts'
 import { transfersState, PendingFile } from '../state/transfers.ts'
 import { toast } from './Toast.tsx'
@@ -92,12 +93,12 @@ export function FileQueue({ pendingFiles, onAddMore }: FileQueueProps) {
   const handleCopyLink = async () => {
     if (!readyToken) return
     const url = getShareUrl(readyToken)
-    try {
-      await navigator.clipboard.writeText(url)
+    const ok = await copyText(url)
+    if (ok) {
       setCopied(true)
       toast.success(t('send.copiedLink'))
       setTimeout(() => setCopied(false), 2000)
-    } catch {
+    } else {
       toast.error(t('send.copyFailed'))
     }
   }

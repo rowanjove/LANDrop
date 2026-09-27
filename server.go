@@ -3,51 +3,149 @@ package main
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 )
 
+func initLogging() {
+	logDir := getStateDir()
+	logPath := filepath.Join(logDir, "landrop.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err == nil {
+		if info, statErr := logFile.Stat(); statErr == nil && info.Size() > 10*1024*1024 {
+			_ = logFile.Close()
+			_ = os.Remove(logPath + ".1")
+			_ = os.Rename(logPath, logPath+".1")
+			logFile, _ = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+		}
+		if logFile != nil {
+			log.SetOutput(io.MultiWriter(os.Stderr, logFile))
+		}
+	}
+}
+
+func isVirtualInterface(name string) bool {
+	lower := strings.ToLower(name)
+	virtualKeywords := []string{
+		"vethernet", "vmware", "vmnet", "virtualbox", "vbox",
+		"docker", "container", "cni", "flannel", "calico",
+		"tailscale", "zerotier", "tap", "tun", "wsl", "hyper-v", "npcap",
+	}
+	for _, kw := range virtualKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func GetAllLocalIPs() []string {
+	var ips []string
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return []string{"127.0.0.1"}
+	}
+
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok || ipNet.IP.IsLoopback() {
+				continue
+			}
+			ip4 := ipNet.IP.To4()
+			if ip4 != nil {
+				ips = append(ips, ip4.String())
+			}
+		}
+	}
+	if len(ips) == 0 {
+		return []string{"127.0.0.1"}
+	}
+	return ips
+}
+
 func getLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
+	ifaces, err := net.Interfaces()
 	if err != nil {
 		return "127.0.0.1"
 	}
 
-	var fallback string
-	for _, addr := range addrs {
-		ipNet, ok := addr.(*net.IPNet)
-		if !ok || ipNet.IP.IsLoopback() {
-			continue
-		}
-		ip4 := ipNet.IP.To4()
-		if ip4 == nil {
-			continue
-		}
+	var physicalIPs []string
+	var virtualIPs []string
 
-		switch {
-		case ip4[0] == 192 && ip4[1] == 168:
-			return ip4.String()
-		case ip4[0] == 10:
-			return ip4.String()
-		case ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31:
-			if fallback == "" {
-				fallback = ip4.String()
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		isVirtual := isVirtualInterface(iface.Name)
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok || ipNet.IP.IsLoopback() {
+				continue
 			}
-		case fallback == "":
-			fallback = ip4.String()
+			ip4 := ipNet.IP.To4()
+			if ip4 == nil {
+				continue
+			}
+			if isVirtual {
+				virtualIPs = append(virtualIPs, ip4.String())
+			} else {
+				physicalIPs = append(physicalIPs, ip4.String())
+			}
 		}
 	}
 
-	if fallback != "" {
+	chooseBest := func(candidates []string) string {
+		var fallback string
+		for _, ipStr := range candidates {
+			ip := net.ParseIP(ipStr).To4()
+			if ip == nil {
+				continue
+			}
+			switch {
+			case ip[0] == 192 && ip[1] == 168:
+				return ipStr
+			case ip[0] == 10:
+				return ipStr
+			case ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31:
+				if fallback == "" {
+					fallback = ipStr
+				}
+			case fallback == "":
+				fallback = ipStr
+			}
+		}
 		return fallback
 	}
+
+	if bestPhysical := chooseBest(physicalIPs); bestPhysical != "" {
+		return bestPhysical
+	}
+	if bestVirtual := chooseBest(virtualIPs); bestVirtual != "" {
+		return bestVirtual
+	}
+
 	return "127.0.0.1"
 }
 
@@ -98,7 +196,12 @@ func openBrowser(rawURL string) error {
 	return exec.Command(command, args...).Start()
 }
 
-func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
+func startServer(port int, pin string, useTLS bool, oneTimeUse bool, enableTray bool, hideConsole bool) {
+	if err := EnsureSingleInstance(port); err != nil {
+		log.Printf("单实例检查提示：%v", err)
+	}
+	defer ReleaseSingleInstance()
+
 	listener, actualPort, err := listenAvailablePort(port)
 	if err != nil {
 		log.Fatalf("启动失败：%v", err)
@@ -143,18 +246,44 @@ func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
 		}
 	}()
 
+	scheme := "http"
+	if useTLS {
+		scheme = "https"
+	}
+	url := fmt.Sprintf("%s://%s", scheme, addr)
+
+	var removeTray func()
+	exitCleanup := func() {
+		cleanupTicker.Stop()
+		if removeTray != nil {
+			removeTray()
+		}
+		ReleaseSingleInstance()
+		app.mdns.Stop()
+		app.store.Cleanup()
+	}
+	app.SetOnExit(exitCleanup)
+
+	if enableTray {
+		var trayErr error
+		removeTray, trayErr = StartTray(url, app.hostname, func() {
+			log.Println("\n正在通过系统托盘退出……")
+			exitCleanup()
+			os.Exit(0)
+		})
+		if trayErr == nil && hideConsole {
+			HideConsole()
+		}
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		cleanupTicker.Stop()
 		log.Println("\n正在清理并退出……")
-		app.mdns.Stop()
-		app.store.Cleanup()
+		exitCleanup()
 		os.Exit(0)
 	}()
-
-	scheme := "http"
 	server := &http.Server{
 		Addr:              listenAddr,
 		Handler:           handler,
@@ -173,7 +302,6 @@ func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
 		}
 	}
 
-	url := fmt.Sprintf("%s://%s", scheme, addr)
 	serveErr := make(chan error, 1)
 	if useTLS {
 		go func() { serveErr <- server.Serve(tls.NewListener(listener, server.TLSConfig)) }()
@@ -185,6 +313,15 @@ func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
 	fmt.Printf("LAN Drop v%s\n", version)
 	fmt.Printf("设备：%s\n", app.hostname)
 	fmt.Printf("访问地址：%s\n", url)
+	allIPs := GetAllLocalIPs()
+	if len(allIPs) > 1 {
+		fmt.Printf("备用局域网地址：\n")
+		for _, ip := range allIPs {
+			if ip != localIP {
+				fmt.Printf("  - %s://%s:%d\n", scheme, ip, actualPort)
+			}
+		}
+	}
 	if app.pin.IsEnabled() {
 		fmt.Printf("PIN：%s\n", pin)
 	}
@@ -197,6 +334,9 @@ func startServer(port int, pin string, useTLS bool, oneTimeUse bool) {
 	fmt.Println("正在打开浏览器；也可以手动访问上方地址或扫描二维码。")
 	if err := openBrowser(url); err != nil {
 		log.Printf("自动打开浏览器失败：%v；请手动访问：%s", err, url)
+	}
+	if enableTray && runtime.GOOS == "windows" {
+		fmt.Println("提示：系统托盘已就绪，可在任务栏右下角托盘图标右键随时选择「显示/隐藏控制台」。")
 	}
 	if useTLS {
 		fmt.Println("HTTPS 提示：临时自签名证书可能触发浏览器警告。")

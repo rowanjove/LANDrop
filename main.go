@@ -11,12 +11,15 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
-const version = "2.0.3"
+const version = "2.0.4"
 
 type interruptedDownloadError struct {
 	err error
@@ -31,6 +34,7 @@ func (e interruptedDownloadError) Unwrap() error {
 }
 
 func main() {
+	initLogging()
 	if len(os.Args) < 2 {
 		fmt.Println("未指定命令，正在启动 LANDrop 服务……")
 		os.Args = append(os.Args, "serve")
@@ -51,8 +55,11 @@ func main() {
 		sPin := serveCmd.String("pin", "", "4 位 PIN 保护")
 		sTLS := serveCmd.Bool("tls", false, "启用 HTTPS")
 		sOneTime := serveCmd.Bool("one-time", false, "每个链接成功下载一次后失效")
+		sConsole := serveCmd.Bool("console", false, "保留控制台黑框窗口（默认自动隐藏并常驻系统托盘）")
+		sNoTray := serveCmd.Bool("no-tray", false, "禁用系统托盘图标")
 		_ = serveCmd.Parse(os.Args[2:])
-		startServer(*sPort, *sPin, *sTLS, *sOneTime)
+		hideConsole := !*sConsole && !*sNoTray
+		startServer(*sPort, *sPin, *sTLS, *sOneTime, !*sNoTray, hideConsole)
 
 	case "send":
 		sendCmd := flag.NewFlagSet("send", flag.ExitOnError)
@@ -154,9 +161,38 @@ func main() {
 
 	default:
 		if _, err := os.Stat(os.Args[1]); err == nil {
-			flag.Parse()
-			sendFile(*port, *pin, *tlsFlag, os.Args[1:])
-			return
+			var files []string
+			dPort := *port
+			dPin := *pin
+			dTLS := *tlsFlag
+			for i := 1; i < len(os.Args); i++ {
+				arg := os.Args[i]
+				if arg == "--tls" || arg == "-tls" {
+					dTLS = true
+				} else if strings.HasPrefix(arg, "--port=") || strings.HasPrefix(arg, "-port=") {
+					parts := strings.SplitN(arg, "=", 2)
+					if p, err := strconv.Atoi(parts[1]); err == nil && p > 0 {
+						dPort = p
+					}
+				} else if (arg == "--port" || arg == "-port") && i+1 < len(os.Args) {
+					if p, err := strconv.Atoi(os.Args[i+1]); err == nil && p > 0 {
+						dPort = p
+						i++
+					}
+				} else if strings.HasPrefix(arg, "--pin=") || strings.HasPrefix(arg, "-pin=") {
+					parts := strings.SplitN(arg, "=", 2)
+					dPin = parts[1]
+				} else if (arg == "--pin" || arg == "-pin") && i+1 < len(os.Args) {
+					dPin = os.Args[i+1]
+					i++
+				} else if !strings.HasPrefix(arg, "-") {
+					files = append(files, arg)
+				}
+			}
+			if len(files) > 0 {
+				sendFile(dPort, dPin, dTLS, files)
+				return
+			}
 		}
 		fmt.Fprintf(os.Stderr, "未知命令：%s\n", os.Args[1])
 		printUsage()
@@ -182,6 +218,8 @@ func printUsage() {
   --pin 1234                                   启用 4 位 PIN 保护
   --tls                                        启用 HTTPS
   --one-time                                   下载一次后链接失效
+  --console                                    保留控制台黑框窗口（默认自动隐藏并常驻系统托盘）
+  --no-tray                                    禁用系统托盘图标
 
 示例：
   landrop serve
@@ -211,6 +249,14 @@ func sendFile(port int, pin string, useTLS bool, files []string) {
 
 	app := NewApp(addr, pin)
 	app.mdns = NewMDNSManager(actualPort, app.broker, app.hostname)
+	mdnsScheme := "http"
+	if useTLS {
+		mdnsScheme = "https"
+	}
+	app.mdns.SetScheme(mdnsScheme)
+	if err := app.mdns.Start(); err != nil {
+		log.Printf("mDNS 服务不可用：%v", err)
+	}
 
 	scheme := "http"
 	if useTLS {
@@ -223,6 +269,14 @@ func sendFile(port int, pin string, useTLS bool, files []string) {
 			log.Printf("发送失败：%s - %v", filePath, err)
 			continue
 		}
+		app.broker.Broadcast("file_ready", map[string]interface{}{
+			"token":  item.Token,
+			"name":   item.Name,
+			"size":   item.Size,
+			"items":  item.Items,
+			"type":   "file",
+			"sender": "CLI",
+		})
 		url := fmt.Sprintf("%s://%s/recv/%s", scheme, addr, item.Token)
 		fmt.Printf("文件：%s（%s）\n", item.Name, formatSize(item.Size))
 		fmt.Printf("下载地址：%s\n\n", url)
@@ -236,6 +290,24 @@ func sendFile(port int, pin string, useTLS bool, files []string) {
 	if app.pin.IsEnabled() {
 		handler = app.pin.Middleware(mux)
 	}
+
+	cleanupTicker := time.NewTicker(30 * time.Second)
+	go func() {
+		for range cleanupTicker.C {
+			app.store.CleanupExpired()
+		}
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cleanupTicker.Stop()
+		log.Println("\n正在清理并退出……")
+		app.mdns.Stop()
+		app.store.Cleanup()
+		os.Exit(0)
+	}()
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%d", actualPort),
@@ -265,11 +337,26 @@ func sendText(port int, pin string, useTLS bool, text string) {
 
 	app := NewApp(addr, pin)
 	app.mdns = NewMDNSManager(actualPort, app.broker, app.hostname)
+	mdnsScheme := "http"
+	if useTLS {
+		mdnsScheme = "https"
+	}
+	app.mdns.SetScheme(mdnsScheme)
+	if err := app.mdns.Start(); err != nil {
+		log.Printf("mDNS 服务不可用：%v", err)
+	}
 
 	item, err := app.store.AddText(text)
 	if err != nil {
 		log.Fatalf("准备文本失败：%v", err)
 	}
+	app.broker.Broadcast("file_ready", map[string]interface{}{
+		"token":  item.Token,
+		"name":   "",
+		"size":   item.Size,
+		"type":   "text",
+		"sender": "CLI",
+	})
 
 	scheme := "http"
 	if useTLS {
@@ -288,6 +375,24 @@ func sendText(port int, pin string, useTLS bool, text string) {
 	if app.pin.IsEnabled() {
 		handler = app.pin.Middleware(mux)
 	}
+
+	cleanupTicker := time.NewTicker(30 * time.Second)
+	go func() {
+		for range cleanupTicker.C {
+			app.store.CleanupExpired()
+		}
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cleanupTicker.Stop()
+		log.Println("\n正在清理并退出……")
+		app.mdns.Stop()
+		app.store.Cleanup()
+		os.Exit(0)
+	}()
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%d", actualPort),

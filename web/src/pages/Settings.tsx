@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { Button } from '../components/Button.tsx'
 import { Input } from '../components/Input.tsx'
 import { updateSettings } from '../api/settings.ts'
+import { checkVersion, VersionCheckResult } from '../api/info.ts'
 import { appState, AppState, Theme } from '../state/app.ts'
 import { Language } from '../locales/index.ts'
 import { toast } from '../components/Toast.tsx'
@@ -11,6 +12,27 @@ export function Settings() {
   const [state, setState] = useState<AppState>(appState.get())
   const [deviceName, setDeviceName] = useState(state.info?.name || '')
   const [saving, setSaving] = useState(false)
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [updateResult, setUpdateResult] = useState<VersionCheckResult | null>(null)
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true)
+    try {
+      const res = await checkVersion()
+      setUpdateResult(res)
+      if (res.error) {
+        toast.error(res.error)
+      } else if (res.has_update) {
+        toast.info(t('settings.newVersionAvailable', { version: res.latest_version || '' }))
+      } else {
+        toast.success(t('settings.upToDate'))
+      }
+    } catch {
+      toast.error(t('settings.checkUpdateFailed'))
+    } finally {
+      setCheckingUpdate(false)
+    }
+  }
 
   useEffect(() => {
     return appState.subscribe((s) => {
@@ -133,7 +155,7 @@ export function Settings() {
         <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: 'var(--text-secondary)' }}>{t('settings.version')}</span>
-            <span className="font-mono">v{state.info?.version || '2.0.3'}</span>
+            <span className="font-mono">v{state.info?.version || '2.0.4'}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: 'var(--text-secondary)' }}>{t('settings.os')}</span>
@@ -142,6 +164,40 @@ export function Settings() {
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: 'var(--text-secondary)' }}>{t('settings.lanAddress')}</span>
             <span className="font-mono">{state.info?.addr || window.location.host}</span>
+          </div>
+
+          <div style={{ height: '1px', background: 'var(--border)' }} />
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 500 }}>{t('settings.checkUpdate')}</div>
+              {updateResult?.has_update && (
+                <div style={{ fontSize: '12px', color: 'var(--accent)', marginTop: '2px' }}>
+                  {t('settings.newVersionAvailable', { version: updateResult.latest_version || '' })}
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {updateResult?.has_update && updateResult.release_url && (
+                <a
+                  href={updateResult.release_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary btn-sm"
+                  style={{ textDecoration: 'none' }}
+                >
+                  {t('settings.viewRelease')}
+                </a>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={checkingUpdate}
+                onClick={handleCheckUpdate}
+              >
+                {checkingUpdate ? t('settings.checkingUpdate') : t('settings.checkUpdate')}
+              </Button>
+            </div>
           </div>
         </div>
       </section>

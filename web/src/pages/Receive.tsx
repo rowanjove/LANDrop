@@ -5,6 +5,7 @@ import { IconCheck, IconDownload, IconFile, IconCopy, IconText } from '../compon
 import { fetchShareInfo, getDownloadUrl, getItemDownloadUrl, ShareData } from '../api/transfers.ts'
 import { ApiException } from '../api/client.ts'
 import { formatSize } from '../utils/format.ts'
+import { copyText } from '../utils/clipboard.ts'
 import { toast } from '../components/Toast.tsx'
 import { t } from '../locales/index.ts'
 
@@ -39,12 +40,12 @@ export function Receive({ token }: ReceiveProps) {
 
   const handleCopy = async () => {
     if (!data?.content) return
-    try {
-      await navigator.clipboard.writeText(data.content)
+    const ok = await copyText(data.content)
+    if (ok) {
       setCopied(true)
       toast.success(t('receive.copied'))
       window.setTimeout(() => setCopied(false), 2000)
-    } catch {
+    } else {
       toast.error(t('receive.loadError'))
     }
   }

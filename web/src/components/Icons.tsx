@@ -191,3 +191,12 @@ export function IconGlobe({ size = 18, color, ...props }: IconProps) {
     </svg>
   )
 }
+
+export function IconExchange({ size = 18, color, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color || 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M7 10h14l-4-4" />
+      <path d="M17 14H3l4 4" />
+    </svg>
+  )
+}
