@@ -10,8 +10,10 @@ import { transfersState } from '../state/transfers.ts'
 import { toast } from './Toast.tsx'
 import { t } from '../locales/index.ts'
 
+const isShowcase = typeof window !== 'undefined' && window.location.search.includes('showcase=true')
+
 export function TextClipboardCard() {
-  const [content, setContent] = useState('')
+  const [content, setContent] = useState(isShowcase ? 'https://github.com/rowanjove/LANDrop' : '')
   const [loadingServer, setLoadingServer] = useState(false)
   const [sendingText, setSendingText] = useState(false)
   const [readyToken, setReadyToken] = useState<string | null>(null)
@@ -70,6 +72,7 @@ export function TextClipboardCard() {
   }
 
   useEffect(() => {
+    if (isShowcase) return
     // Optionally load server clipboard initially if available
     fetchClipboard().then((res) => {
       if (res.content && !content) {

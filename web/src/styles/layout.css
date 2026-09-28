@@ -60,7 +60,18 @@
 .header-nav {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+}
+
+.header-device-pill {
+  max-width: 220px;
+}
+
+.header-device-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .desktop-nav-items {
@@ -104,6 +115,8 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .panel-header {
@@ -193,8 +206,13 @@
     display: flex;
   }
 
-  .desktop-nav-items {
-    display: none;
+  .desktop-nav-items,
+  .desktop-only-action {
+    display: none !important;
+  }
+
+  .header-device-pill {
+    max-width: 140px;
   }
 
   .btn,
@@ -213,5 +231,25 @@
     height: 32px;
     min-height: 32px;
     padding: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-inner {
+    padding: 0 12px;
+  }
+  .header-brand {
+    font-size: 0.95rem;
+    gap: 6px;
+  }
+  .header-nav {
+    gap: 8px;
+  }
+  .header-device-name {
+    display: none;
+  }
+  .header-device-pill {
+    max-width: none;
+    padding: 0 8px;
   }
 }

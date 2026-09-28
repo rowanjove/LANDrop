@@ -6,8 +6,38 @@ export interface DevicesState {
   lastSync: number
 }
 
+const isShowcase = typeof window !== 'undefined' && window.location.search.includes('showcase=true')
+
 let state: DevicesState = {
-  devices: [],
+  devices: isShowcase
+    ? [
+        {
+          name: 'LANDrop-PC',
+          addr: '192.168.1.100:53217',
+          os: 'windows',
+          version: '2.0.4',
+          is_self: true,
+          online: true,
+          last_seen: Date.now(),
+        },
+        {
+          name: 'MacBook Pro 16"',
+          addr: '192.168.1.108:53217',
+          os: 'macOS',
+          version: '2.0.4',
+          online: true,
+          last_seen: Date.now(),
+        },
+        {
+          name: 'iPhone 16 Pro',
+          addr: '192.168.1.142',
+          os: 'iOS',
+          version: 'web',
+          online: true,
+          last_seen: Date.now(),
+        },
+      ]
+    : [],
   loading: false,
   lastSync: 0,
 }
@@ -69,6 +99,7 @@ export const devicesState = {
     notify()
   },
   async refresh() {
+    if (isShowcase) return
     state.loading = true
     notify()
     try {

@@ -28,7 +28,7 @@ export const zhCN = {
     textAndClipboard: '文本与剪贴板',
     dropHint: '拖拽文件至此处，或点击浏览',
     selectFiles: '选择文件',
-    addMoreFiles: '+ 添加文件',
+    addMoreFiles: '继续添加',
     clearQueue: '清空队列',
     sendButton: '发送',
     sendingButton: '正在发送...',

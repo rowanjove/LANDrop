@@ -208,6 +208,8 @@ export function FileQueue({ pendingFiles, onAddMore }: FileQueueProps) {
               </div>
               <span
                 style={{
+                  display: 'block',
+                  minWidth: 0,
                   fontSize: '13px',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',

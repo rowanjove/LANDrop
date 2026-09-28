@@ -35,7 +35,7 @@ export function FileSendCard() {
         </div>
 
         {transfers.pendingFiles.length > 0 && (
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div className="desktop-only-action" style={{ display: 'flex', gap: '6px' }}>
             <Button
               variant="ghost"
               size="sm"

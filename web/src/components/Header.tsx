@@ -68,11 +68,12 @@ export function Header({ currentPath, onNavigate }: HeaderProps) {
           <Button
             variant="secondary"
             size="sm"
+            className="header-device-pill"
             onClick={() => setDeviceInfoOpen(true)}
             icon={<IconDevice size={14} />}
-            style={{ maxWidth: '46vw' }}
+            aria-label={deviceName}
           >
-            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{deviceName}</span>
+            <span className="header-device-name">{deviceName}</span>
             <span className={`status-dot ${isOnline ? 'online' : 'offline'}`} style={{ marginLeft: '4px' }} />
           </Button>
 

@@ -10,6 +10,8 @@ html {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 body {
@@ -19,6 +21,8 @@ body {
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 14px;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 input, button, textarea, select {

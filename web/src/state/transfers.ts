@@ -30,11 +30,49 @@ export interface TransfersState {
   loadingHistory: boolean
 }
 
+const isShowcase = typeof window !== 'undefined' && window.location.search.includes('showcase=true')
+
 let state: TransfersState = {
-  pendingFiles: [],
+  pendingFiles: isShowcase
+    ? [
+        {
+          id: 'mock-1',
+          file: new File([], 'Project_Architecture_Overview.pdf'),
+          name: 'Project_Architecture_Overview.pdf',
+          size: 14889779,
+        },
+        {
+          id: 'mock-2',
+          file: new File([], 'LANDrop_v2.0.4_Release.zip'),
+          name: 'LANDrop_v2.0.4_Release.zip',
+          size: 3984588,
+        },
+      ]
+    : [],
   activeTransfer: null,
   activeTransfers: [],
-  recentHistory: [],
+  recentHistory: isShowcase
+    ? [
+        {
+          direction: 'send',
+          name: 'Landscape_Photos_Raw.tar.gz',
+          size: 88713000,
+          type: 'file',
+          status: 'success',
+          timestamp: Math.floor(Date.now() / 1000) - 60,
+          peer: '192.168.1.108',
+        },
+        {
+          direction: 'recv',
+          name: '剪贴板文本消息',
+          size: 42,
+          type: 'text',
+          status: 'success',
+          timestamp: Math.floor(Date.now() / 1000) - 180,
+          peer: '192.168.1.142',
+        },
+      ]
+    : [],
   loadingHistory: false,
 }
 
@@ -87,6 +125,7 @@ export const transfersState = {
     notify()
   },
   async refreshHistory(limit = 10) {
+    if (isShowcase) return
     state.loadingHistory = true
     notify()
     try {
@@ -100,6 +139,7 @@ export const transfersState = {
     }
   },
   async refreshActiveTransfers() {
+    if (isShowcase) return
     try {
       const items = await fetchActiveTransfers()
       state.activeTransfers = items.filter((item) => item.status === 'ready')

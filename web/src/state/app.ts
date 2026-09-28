@@ -11,10 +11,21 @@ export interface AppState {
   language: Language
 }
 
+const isShowcase = typeof window !== 'undefined' && window.location.search.includes('showcase=true')
+
 let state: AppState = {
-  info: null,
-  connected: false,
-  theme: (localStorage.getItem('landrop_theme') as Theme) || 'system',
+  info: isShowcase
+    ? {
+        name: 'LANDrop-PC',
+        version: '2.0.4',
+        os: 'windows',
+        addr: '192.168.1.100:53217',
+        one_time: false,
+        started_at: Math.floor(Date.now() / 1000) - 3600,
+      }
+    : null,
+  connected: isShowcase ? true : false,
+  theme: isShowcase ? 'dark' : (localStorage.getItem('landrop_theme') as Theme) || 'system',
   language: getLanguage(),
 }
 
@@ -74,6 +85,7 @@ export const appState = {
     notify()
   },
   async loadInfo() {
+    if (isShowcase) return
     try {
       const info = await fetchAppInfo()
       state.info = info
